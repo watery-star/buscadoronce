@@ -1,0 +1,54 @@
+name: Actualizar productos
+
+on:
+  schedule:
+    # Todos los días a las 6:17 de Argentina (9:17 UTC)
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+    inputs:
+      solo:
+        description: "Solo estos proveedores (ids separados por coma). Vacío = todos."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar
+  cancel-in-progress: false
+
+jobs:
+  colectar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Probar el colector
+        run: python -m unittest colector/test_colectar.py
+
+      - name: Traer productos de los proveedores
+        run: |
+          if [ -n "${{ github.event.inputs.solo }}" ]; then
+            python colector/colectar.py --solo "${{ github.event.inputs.solo }}"
+          else
+            python colector/colectar.py
+          fi
+
+      - name: Guardar resultados
+        run: |
+          git config user.name "buscador-bot"
+          git config user.email "buscador-bot@users.noreply.github.com"
+          git add docs/productos.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git commit -m "Actualizar productos $(date -u +%Y-%m-%d)"
+            git pull --rebase
+            git push
+          fi
