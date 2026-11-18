@@ -24,6 +24,8 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main  # siempre la versión más reciente, con los datos de la última carga
 
       - uses: actions/setup-python@v5
         with:
