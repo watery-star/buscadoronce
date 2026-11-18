@@ -15,6 +15,7 @@ import argparse
 import gzip
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -22,8 +23,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from http.cookiejar import CookieJar
+from urllib.parse import urlencode, urljoin, urlparse
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 from urllib.robotparser import RobotFileParser
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -34,7 +36,8 @@ UA = "Mozilla/5.0 (compatible; BuscadorOnce/1.0; +https://github.com)"
 TIMEOUT = 25
 HILOS = 4            # pedidos simultáneos por proveedor (moderado, para no cargar las webs)
 PAUSA = 0.25         # segundos entre pedidos de cada hilo
-MAX_POR_DEFECTO = 5000
+MAX_POR_DEFECTO = 15000
+LIMITE_SIN_DATOS = 400  # si tantas páginas seguidas del sitemap no son productos (y no hubo ninguno), se corta
 
 # Qué colector usa cada plataforma y qué URLs del sitemap son productos.
 PATRONES_PRODUCTO = {
@@ -224,7 +227,7 @@ def woocommerce(prov, maximo, robots):
 
 def urls_de_productos(prov, robots, maximo):
     base = base_de(prov)
-    patron = PATRONES_PRODUCTO.get(prov["plataforma"])
+    patron = prov.get("patron") or PATRONES_PRODUCTO.get(prov["plataforma"])
     pendientes = list(dict.fromkeys(robots.sitemaps + [base + "/sitemap.xml"]))
     vistos, urls = set(), []
     limite = maximo if patron else maximo * 3
@@ -265,8 +268,10 @@ def _aplanar(d):
 
 
 def _tipo(d):
+    """Devuelve los tipos sin prefijo: 'http://schema.org/Product' -> 'Product'."""
     t = d.get("@type", "")
-    return t if isinstance(t, list) else [t]
+    tipos = t if isinstance(t, list) else [t]
+    return [re.split(r"[/#:]", str(x).rstrip("/"))[-1] for x in tipos]
 
 
 def _imagen(v):
@@ -376,9 +381,9 @@ def sitemap_jsonld(prov, maximo, robots):
                 out.append(it)
             else:
                 sin_datos += 1
-            # Si las primeras 40 páginas no tienen datos de producto, no tiene sentido seguir.
-            if i == 40 and not out:
-                print("    las primeras 40 páginas no tienen datos de producto; corto", flush=True)
+            # Si muchas páginas seguidas no tienen datos de producto, no tiene sentido seguir.
+            if i == LIMITE_SIN_DATOS and not out:
+                print(f"    las primeras {LIMITE_SIN_DATOS} páginas no tienen datos de producto; corto", flush=True)
                 pool.shutdown(wait=False, cancel_futures=True)
                 break
             if len(out) >= maximo:
@@ -387,12 +392,166 @@ def sitemap_jsonld(prov, maximo, robots):
     return out[:maximo]
 
 
+# ---------------------------------------------------------------- Catálogos PHP con clave única
+# Webs como Oestech y Laxshi: un formulario pide una clave de acceso (la misma para
+# todos los clientes) y después muestran bloques "Código: / nombre / Ctdad. por bulto / $precio".
+# La clave se lee de una variable de entorno CLAVE_<ID> (en GitHub: Settings → Secrets).
+
+RE_CODIGO = re.compile(r"C[óo]digo:\s*", re.I)
+RE_PRECIO = re.compile(r"\$\s*([\d.]+(?:,\d{1,2})?)")
+RE_BULTO = re.compile(r"(?:Ctdad\.?|Cantidad)\s*por\s*bulto:\s*(\d+)", re.I)
+RE_IMG = re.compile(r"<img[^>]+src=[\"']([^\"']+)[\"']", re.I)
+
+
+def productos_por_codigo(texto_html, url_pagina, prov):
+    """Extrae productos de páginas que listan bloques con 'Código:'."""
+    inicios = [m.start() for m in RE_CODIGO.finditer(texto_html)]
+    out = []
+    for k, ini in enumerate(inicios):
+        fin = inicios[k + 1] if k + 1 < len(inicios) else min(len(texto_html), ini + 3000)
+        previo = texto_html[max(inicios[k - 1] if k else 0, ini - 2500):ini]
+        bloque = texto_html[ini:fin]
+        lineas = [limpiar_texto(x) for x in re.split(r"<[^>]+>|\n", bloque)]
+        lineas = [x for x in lineas if x]
+        if not lineas:
+            continue
+        codigo = RE_CODIGO.sub("", lineas[0]).strip()
+        nombre = next((x for x in lineas[1:] if not RE_BULTO.search(x) and not RE_PRECIO.match(x)
+                       and not RE_CODIGO.match(x)), None)
+        precio = RE_PRECIO.search(" ".join(lineas))
+        if not (codigo and nombre and precio):
+            continue
+        nombre = re.sub(r"(\s*-)+\s*$", "", nombre).strip()
+        bulto = RE_BULTO.search(" ".join(lineas))
+        imgs = RE_IMG.findall(previo)
+        imagen = urljoin(url_pagina, imgs[-1]) if imgs else None
+        detalle = f"Código: {codigo}" + (f" · Cantidad por bulto: {bulto.group(1)}" if bulto else "")
+        it = item(prov, nombre, parse_precio(precio.group(1)), f"{url_pagina.split('#')[0]}#codigo-{codigo}",
+                  imagen, None, True, detalle)
+        if it:
+            it["_codigo"] = codigo
+            out.append(it)
+    return out
+
+
+def clave_php(prov, maximo, robots):
+    base = base_de(prov)
+    variable = "CLAVE_" + prov["id"].upper()
+    clave = os.environ.get(variable)
+    sesion = build_opener(HTTPCookieProcessor(CookieJar()))
+
+    def abrir(url, datos=None):
+        cuerpo = urlencode(datos).encode() if datos else None
+        req = Request(url, data=cuerpo, headers={"User-Agent": UA, "Accept-Language": "es-AR,es;q=0.9"})
+        with sesion.open(req, timeout=TIMEOUT) as r:
+            charset = r.headers.get_content_charset() or "latin-1"
+            return r.geturl(), r.read().decode(charset, errors="replace")
+
+    por_codigo = {}
+    if clave:
+        url_login = urljoin(base + "/", prov.get("login", "index.php"))
+        abrir(url_login, {"clave": clave, "enviar": "Ingresar"})
+    else:
+        print(f"    sin clave ({variable} no está cargada): solo se leen los productos de la portada", flush=True)
+
+    pendientes = [urljoin(base + "/", prov.get("catalogo", "")), base + "/"]
+    vistas, diagnostico = set(), None
+    while pendientes and len(vistas) < 400 and len(por_codigo) < maximo:
+        url = pendientes.pop(0)
+        if url in vistas or not robots.permite(url):
+            continue
+        vistas.add(url)
+        try:
+            url_final, texto = abrir(url)
+        except Exception:
+            continue
+        if diagnostico is None:
+            pide_clave = bool(re.search(r'type=["\']password', texto, re.I))
+            diagnostico = f"primera página: {url_final} ({len(texto)} bytes, {'pide clave' if pide_clave else 'sin formulario de clave'})"
+        for it in productos_por_codigo(texto, url_final, prov):
+            por_codigo.setdefault(it.pop("_codigo"), it)
+        # seguir enlaces del catálogo: rubros, categorías y páginas
+        for href in re.findall(r'href=["\']([^"\'#]+)["\']', texto):
+            destino = urljoin(url_final, html.unescape(href))
+            if urlparse(destino).netloc != urlparse(base).netloc:
+                continue
+            if re.search(r"(salir|logout|contacto|envios|preguntas|testimonios|como-comprar|suscripcion|carrito|pedido)", destino, re.I):
+                continue
+            if re.search(r"(rubro|rub=|categoria|catalogo|listado|pag(ina)?=|page=|index2|productos)", destino, re.I) and destino not in vistas:
+                pendientes.append(destino)
+        time.sleep(PAUSA)
+    if not por_codigo:
+        print(f"    {diagnostico}", flush=True)
+    else:
+        print(f"    {len(vistas)} páginas recorridas", flush=True)
+    return list(por_codigo.values())[:maximo]
+
+
+# ---------------------------------------------------------------- Webs que cargan con JavaScript
+# Abre la página en un navegador automático (Playwright), baja hasta el final para que
+# cargue todo y lee los productos que se ven en pantalla, como lo haría una persona.
+
+JS_TARJETAS = """(tarjetas, sel) => tarjetas.map(c => {
+  const q = s => s ? (c.querySelector(s)?.innerText || '').trim() : '';
+  const img = sel.imagen ? c.querySelector(sel.imagen) : null;
+  const a = c.querySelector('a[href]');
+  return {nombre: q(sel.nombre), precio: q(sel.precio), categoria: q(sel.categoria),
+          codigo: q(sel.codigo), extra: q(sel.extra), imagen: img ? img.src : '', link: a ? a.href : ''};
+})"""
+
+
+def item_de_tarjeta(prov, t):
+    imagen = t.get("imagen") or ""
+    if "placehold" in imagen or imagen.startswith("data:"):
+        imagen = ""
+    codigo = re.sub(r"^C[óo]digo:\s*", "", t.get("codigo") or "", flags=re.I).strip()
+    extra = t.get("extra") or ""
+    extra = re.sub(r"(?i)cantidad por bulto:", "Cantidad por bulto:", extra.title()) if extra.isupper() else extra
+    detalle = " · ".join(x for x in (f"Código: {codigo}" if codigo else "", extra) if x)
+    url = t.get("link") or (prov["url"].rstrip("/") + "/#codigo-" + (codigo or re.sub(r"\W+", "-", t.get("nombre", "")).lower()))
+    return item(prov, t.get("nombre"), parse_precio(t.get("precio")), url, imagen,
+                (t.get("categoria") or "").title(), True, detalle)
+
+
+def navegador(prov, maximo, robots):
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise RuntimeError("falta instalar playwright (pip install playwright && python -m playwright install chromium)")
+    if not robots.permite(prov["url"]):
+        raise RuntimeError("robots.txt no permite leer la página")
+    sel = prov["selectores"]
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page(user_agent=UA, locale="es-AR", viewport={"width": 1280, "height": 900})
+        pg.goto(prov["url"], wait_until="domcontentloaded", timeout=60000)
+        pg.wait_for_selector(sel["tarjeta"], timeout=45000)
+        anterior, quietos = -1, 0
+        while True:
+            n = pg.locator(sel["tarjeta"]).count()
+            if n >= maximo:
+                break
+            quietos = quietos + 1 if n == anterior else 0
+            if quietos >= 5:
+                break
+            anterior = n
+            pg.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            pg.mouse.wheel(0, 4000)
+            pg.wait_for_timeout(1500)
+        tarjetas = pg.eval_on_selector_all(sel["tarjeta"], JS_TARJETAS, sel)
+        b.close()
+    print(f"    {len(tarjetas)} tarjetas en pantalla", flush=True)
+    return [x for x in (item_de_tarjeta(prov, t) for t in tarjetas) if x][:maximo]
+
+
 COLECTORES = {
     "shopify": shopify,
     "woocommerce": woocommerce,
     "tiendanube": sitemap_jsonld,
     "jumpseller": sitemap_jsonld,
     "a_medida": sitemap_jsonld,
+    "clave_php": clave_php,
+    "navegador": navegador,
 }
 
 

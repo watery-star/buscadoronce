@@ -138,5 +138,50 @@ class Colectores(unittest.TestCase):
         self.assertEqual([x["u"] for x in r], ["https://tienda.com/productos/mate/"])
 
 
+class FormatosNuevos(unittest.TestCase):
+    def test_tipo_con_url_completa(self):
+        # Deonce (CS-Cart) escribe el tipo como URL
+        html = """<script type="application/ld+json">{"@context":"http://schema.org/","@type":"http://schema.org/Product",
+          "name":"Toall\\u00f3n Racing","image":["https://deonce.com.ar/t.png"],
+          "offers":[{"@type":"http://schema.org/Offer","availability":"InStock","price":10000,"priceCurrency":"ARS"}]}</script>"""
+        it = colectar.extraer_producto(html, "https://deonce.com.ar/t-es/", PROV_TN)
+        self.assertEqual((it["n"], it["p"], it["d"]), ("Toallón Racing", 10000, 1))
+
+    def test_bloques_con_codigo_oestech(self):
+        html = """<div class="caja_producto_destacado"><a href="#"><img class="img-responsive" src="fotos/99029.jpg"></a>
+          <div class="datos_producto_destacado"> <h1>Código: 99029</h1> <h1>ESPEJO LED RECTANGULAR 17X29CM - - - - - - -</h1>
+          <h1>Ctdad. por bulto: 36</h1> <h1>$9.141,60</h1> </div></div>
+          <div class="caja_producto_destacado"><a href="#"><img src="fotos/AUR-K1.jpg"></a>
+          <div> <h1>Código: AUR-K1</h1> <h1>(OE44037) AURICULAR BT K21 - - - -</h1> <h1>Ctdad. por bulto: 100</h1> <h1>$7.628,40</h1></div></div>"""
+        prov = {"id": "oestech", "nombre": "Oestech", "url": "https://oestech.com.ar", "plataforma": "clave_php"}
+        r = colectar.productos_por_codigo(html, "https://oestech.com.ar/", prov)
+        self.assertEqual([(x["_codigo"], x["n"], x["p"], x["i"]) for x in r], [
+            ("99029", "ESPEJO LED RECTANGULAR 17X29CM", 9141.6, "https://oestech.com.ar/fotos/99029.jpg"),
+            ("AUR-K1", "(OE44037) AURICULAR BT K21", 7628.4, "https://oestech.com.ar/fotos/AUR-K1.jpg"),
+        ])
+        self.assertEqual(r[0]["t"], "Código: 99029 · Cantidad por bulto: 36")
+
+    def test_tarjeta_oncepuntos(self):
+        prov = {"id": "oncepuntos", "nombre": "Oncepuntos", "url": "https://oncepuntos.com.ar/", "plataforma": "navegador"}
+        it = colectar.item_de_tarjeta(prov, {"nombre": "PILETA CON PARED RIGIDA 120X25 226L 51351", "precio": "$17.590",
+                                             "categoria": "JUGUETERIA", "codigo": "CÓDIGO: 306648",
+                                             "extra": "CANTIDAD POR BULTO: 1",
+                                             "imagen": "https://placehold.co/400x400?text=Sin+imagen", "link": ""})
+        self.assertEqual((it["p"], it["c"], it["i"], it["u"]), (17590, "Jugueteria", "", "https://oncepuntos.com.ar/#codigo-306648"))
+        self.assertEqual(it["t"], "Código: 306648 · Cantidad por bulto: 1")
+
+    def test_patron_propio_del_proveedor(self):
+        colectar.get = falso_get({
+            "https://deonce.com.ar/sitemap.xml": "<urlset><url><loc>https://deonce.com.ar/hogar/</loc></url>"
+                                                 "<url><loc>https://deonce.com.ar/hogar/toalla-es/</loc></url></urlset>"})
+        prov = {"id": "deonce", "url": "https://deonce.com.ar", "plataforma": "a_medida", "patron": "-es/$"}
+        try:
+            self.assertEqual(colectar.urls_de_productos(prov, SinRobots(), 100), ["https://deonce.com.ar/hogar/toalla-es/"])
+        finally:
+            colectar.get = Colectores.get_original_global
+
+
+Colectores.get_original_global = colectar.get
+
 if __name__ == "__main__":
     unittest.main()

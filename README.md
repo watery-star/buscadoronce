@@ -21,7 +21,11 @@ El buscador queda en `https://TU-USUARIO.github.io/buscador-once/`.
 
 ## Agregar o sacar un proveedor
 
-Editá `proveedores.json`. Plataformas posibles: `tiendanube`, `woocommerce`, `shopify`, `jumpseller`, `a_medida`.
+Editá `proveedores.json`. Plataformas posibles: `tiendanube`, `woocommerce`, `shopify`, `jumpseller`, `a_medida`,
+`clave_php` (catálogos con una clave de acceso) y `navegador` (webs que cargan los productos con JavaScript).
+
+Para un proveedor `clave_php`, la clave se carga en **Settings → Secrets and variables → Actions → New repository secret**
+con el nombre `CLAVE_` + el id en mayúsculas (por ejemplo `CLAVE_OESTECH`), y se agrega en el workflow junto a las otras.
 Con `"activo": false` el proveedor queda en la lista pero no se consulta.
 
 ## Si un proveedor falla
