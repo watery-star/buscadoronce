@@ -375,7 +375,7 @@ def sitemap_jsonld(prov, maximo, robots):
         return extraer_producto(texto, u, prov)
 
     out, sin_datos = [], 0
-    with ThreadPoolExecutor(HILOS) as pool:
+    with ThreadPoolExecutor(prov.get("hilos", HILOS)) as pool:
         for i, it in enumerate(pool.map(bajar, urls), 1):
             if it:
                 out.append(it)
@@ -679,7 +679,7 @@ def main():
         t0 = time.time()
         try:
             robots = Robots(base_de(prov))
-            nuevos = colector(prov, args.max, robots) if colector else []
+            nuevos = colector(prov, prov.get("max", args.max), robots) if colector else []
             vistos, unicos = set(), []
             for it in nuevos:
                 if it and it["u"] not in vistos:
