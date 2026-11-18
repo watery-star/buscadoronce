@@ -32,7 +32,15 @@ jobs:
       - name: Probar el colector
         run: python -m unittest colector/test_colectar.py
 
+      - name: Instalar navegador automático (para webs que cargan con JavaScript)
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
       - name: Traer productos de los proveedores
+        env:
+          CLAVE_LAXSHI: ${{ secrets.CLAVE_LAXSHI }}
+          CLAVE_OESTECH: ${{ secrets.CLAVE_OESTECH }}
         run: |
           if [ -n "${{ github.event.inputs.solo }}" ]; then
             python colector/colectar.py --solo "${{ github.event.inputs.solo }}"
