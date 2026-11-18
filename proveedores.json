@@ -32,7 +32,7 @@
                "precio": "class=\"price[^\"]*\">([\\s\\S]*?)</span>\\s*</span>"}},
   {"id": "avl112", "nombre": "AVL112", "url": "https://avl112.com.ar", "plataforma": "woocommerce", "activo": true},
   {"id": "betterluva", "nombre": "Better Luva", "url": "https://betterluva.com.ar", "plataforma": "tiendanube", "activo": true},
-  {"id": "lucky", "nombre": "Lucky Electrónica", "url": "https://luckyelectronica.com", "plataforma": "woocommerce", "activo": true},
+  {"id": "lucky", "nombre": "Lucky Electrónica", "url": "https://luckyelectronica.com", "plataforma": "woocommerce", "activo": false, "nota": "La tienda no publica productos en la web (solo páginas informativas)."},
   {"id": "jmp", "nombre": "JMP Packaging", "url": "https://www.jmp1.com.ar", "plataforma": "clave_php", "activo": true, "catalogo": "catalogo2024.php?rub=99999"},
   {"id": "tak", "nombre": "Tak Technology", "url": "https://www.taktechnology.com.ar", "plataforma": "clave_php", "activo": true, "catalogo": "catalogo2022x3.php?rub=99999"},
   {"id": "ahmed", "nombre": "Ahmed Electrónica", "url": "https://ahmedelectronica.com", "plataforma": "a_medida", "activo": true},

@@ -201,6 +201,10 @@ class CatalogosConClave(unittest.TestCase):
         self.assertEqual((o["n"], o["p"], o["c"], o["i"], o["u"], o["t"]),
                          ("BEBEDERO ANTI SPLASH 22CM X 22CM", 8822, "Hogar", "https://oestech.com.ar/fotos/ANTI-SPLASH.jpg",
                           "https://oestech.com.ar/catalogo2024.php?rub=99999#ANTI-SPLASH", "Código: ANTI-SPLASH · Cantidad por bulto: 32"))
+        tak = """<a name="10248" id="10248"></a> <!-- anclaje --> <!-- <h1></h1> --> <h1>AAURICULAR BT NETMAK C/VISOR NM-BIZ ______________</h1>
+          <img src="fotos/10248.jpg"> Codigo: 10248<br> Rubro: AURICULARES <br> Ctdad. por bulto: 100<br> <strong> $ 5,874 </strong>"""
+        k = colectar.productos_anclaje(tak, "https://www.taktechnology.com.ar/catalogo2022x3.php?rub=99999", p)[0]
+        self.assertEqual((k["n"], k["p"], k["c"]), ("AAURICULAR BT NETMAK C/VISOR NM-BIZ", 5874, "Auriculares"))
         l = colectar.productos_anclaje(self.LAXSHI + self.LAXSHI.replace("14763", "13012"), "https://laxshi.com/catalogo2021.php?rub=99999", p)
         self.assertEqual(len(l), 2)
         self.assertEqual((l[0]["n"], l[0]["p"], l[0]["c"], l[0]["i"], l[0]["t"]),

@@ -459,7 +459,7 @@ def productos_anclaje(texto_html, url_pagina, prov):
     out = []
     for k, m in enumerate(marcas):
         fin = marcas[k + 1].start() if k + 1 < len(marcas) else len(texto_html)
-        b = texto_html[m.end():fin]
+        b = re.sub(r"<!--.*?-->", "", texto_html[m.end():fin], flags=re.S)  # sin comentarios HTML
         codigo = limpiar_texto(m.group(1))
         nombre = re.search(r"<h1[^>]*>(.*?)</h1>", b, re.S | re.I)
         img = re.search(r'<img[^>]+src="([^"]+)"', b, re.I)
@@ -471,7 +471,7 @@ def productos_anclaje(texto_html, url_pagina, prov):
         if not (nombre and precio):
             continue
         detalle = f"Código: {codigo}" + (f" · Cantidad por bulto: {bulto.group(1)}" if bulto else "")
-        it = item(prov, re.sub(r"(\s*-)+\s*$", "", limpiar_texto(nombre.group(1))), parse_precio(precio.group(1)),
+        it = item(prov, re.sub(r"[\s_-]+$", "", limpiar_texto(nombre.group(1))), parse_precio(precio.group(1)),
                   f"{url_pagina.split('#')[0]}#{codigo}", urljoin(url_pagina, img.group(1)) if img else None,
                   limpiar_texto(cat.group(1)).title() if cat else None, True, detalle)
         if it:
