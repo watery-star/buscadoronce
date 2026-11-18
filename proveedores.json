@@ -22,5 +22,11 @@
   {"id": "nextcell", "nombre": "Next Cell", "url": "https://nextcell.com.ar", "plataforma": "woocommerce", "activo": true},
   {"id": "oportunidadesvip", "nombre": "Oportunidades Vip", "url": "https://oportunidades-vip.com.ar", "plataforma": "woocommerce", "activo": true},
   {"id": "mtl", "nombre": "MTL", "url": "https://www.mtl.com.ar", "plataforma": "tiendanube", "activo": true},
-  {"id": "planetaonce", "nombre": "Planeta Once", "url": "https://www.planetaonce.com", "plataforma": "a_medida", "activo": true}
+  {"id": "planetaonce", "nombre": "Planeta Once", "url": "https://www.planetaonce.com", "plataforma": "a_medida", "activo": true},
+  {"id": "sublink", "nombre": "Sublink", "url": "https://sublink.com.ar", "plataforma": "listado_html", "activo": true, "nota": "Compra mínima $150.000.",
+   "listado": {"url": "/tienda?page={n}", "tarjeta": "class=\"shop_item\"",
+               "link": "href=\"(/producto/[^\"]+)\"", "imagen": "<img[^>]+src=\"([^\"]+)\"",
+               "nombre": "class=\"shop_title[^\"]*\">\\s*<a[^>]*>\\s*<span>([\\s\\S]*?)</span>",
+               "categoria": "class=\"cats\">\\s*<a[^>]*>([\\s\\S]*?)</a>",
+               "precio": "class=\"price[^\"]*\">([\\s\\S]*?)</span>\\s*</span>"}}
 ]

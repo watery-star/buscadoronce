@@ -181,6 +181,30 @@ class FormatosNuevos(unittest.TestCase):
             colectar.get = Colectores.get_original_global
 
 
+class Listado(unittest.TestCase):
+    TARJETA = """<div class="shop_item"> <ul class="slides"><li><a href="/producto/{slug}"><img loading="lazy" src="/uploads/principales/{slug}.png"></a></li></ul>
+      <div class="shop_desc pb-0"> <div class="shop_title pull-left"> <a href="/producto/{slug}"> <span>{nombre}</span> </a>
+      <span class="cats"> <a href="/categoria/bano">BAÑO</a> </span> </div> </div><div class="shop_desc pt-0"> <span class="price pull-left">
+      <span style="cursor: pointer;" data-toggle="tooltip"> $2.376 - $3.393 </span> </span> </div></div>"""
+
+    def test_sublink(self):
+        prov = json.loads(Path(__file__).resolve().parent.parent.joinpath("proveedores.json").read_text(encoding="utf-8"))
+        prov = next(p for p in prov if p["id"] == "sublink")
+        pag1 = "".join(self.TARJETA.format(slug=f"p{i}", nombre=f"PRODUCTO {i}") for i in range(12))
+        pag2 = self.TARJETA.format(slug="p12", nombre="DISPENSER CUADRADO VISOR")
+        colectar.get = falso_get({"https://sublink.com.ar/tienda?page=1": pag1, "https://sublink.com.ar/tienda?page=2": pag2,
+                                  "https://sublink.com.ar/tienda?page=3": pag2})
+        colectar.PAUSA = 0
+        try:
+            r = colectar.listado_html(prov, 1000, SinRobots())
+        finally:
+            colectar.get = Colectores.get_original_global
+        self.assertEqual(len(r), 13)
+        self.assertEqual(r[-1], {"n": "DISPENSER CUADRADO VISOR", "p": 2376, "u": "https://sublink.com.ar/producto/p12",
+                                 "i": "https://sublink.com.ar/uploads/principales/p12.png", "c": "Baño", "s": "sublink",
+                                 "d": 1, "t": "Precios publicados: $2.376 a $3.393"})
+
+
 Colectores.get_original_global = colectar.get
 
 if __name__ == "__main__":

@@ -544,7 +544,54 @@ def navegador(prov, maximo, robots):
     return [x for x in (item_de_tarjeta(prov, t) for t in tarjetas) if x][:maximo]
 
 
+# ---------------------------------------------------------------- Listados HTML paginados
+# Para tiendas a medida cuyo listado (/tienda?page=N) ya trae nombre, precio, foto y link.
+# La configuración del proveedor indica la URL de las páginas, cómo separar cada tarjeta y
+# una expresión regular por dato.
+
+def _tarjetas_listado(texto, cfg):
+    partes = texto.split(cfg["tarjeta"])[1:]
+    out = []
+    for parte in partes:
+        datos = {}
+        for campo in ("link", "imagen", "nombre", "categoria", "precio"):
+            m = re.search(cfg[campo], parte) if cfg.get(campo) else None
+            datos[campo] = limpiar_texto(m.group(1)) if m else ""
+        out.append(datos)
+    return out
+
+
+def listado_html(prov, maximo, robots):
+    base = base_de(prov)
+    cfg = prov["listado"]
+    vistos, out = set(), []
+    for n in range(1, cfg.get("paginas_max", 300) + 1):
+        url = urljoin(base + "/", cfg["url"].format(n=n))
+        if not robots.permite(url):
+            raise RuntimeError(f"robots.txt no permite leer {url}")
+        tarjetas = _tarjetas_listado(get(url), cfg)
+        nuevas = [t for t in tarjetas if t["link"] and t["link"] not in vistos]
+        if not nuevas:  # página vacía o repetida: se terminó el listado
+            break
+        for t in nuevas:
+            vistos.add(t["link"])
+            precios = [x for x in (parse_precio(v) for v in re.findall(r"\$\s*[\d.,]+", t["precio"])) if x]
+            detalle = ""
+            if len(precios) > 1:
+                detalle = "Precios publicados: " + " a ".join(f"${x:,.0f}".replace(",", ".") for x in sorted(precios))
+            it = item(prov, t["nombre"], min(precios) if precios else None, urljoin(base + "/", t["link"]),
+                      urljoin(base + "/", t["imagen"]) if t["imagen"] else None, t["categoria"].title(), True, detalle)
+            if it:
+                out.append(it)
+        if len(out) >= maximo:
+            break
+        time.sleep(PAUSA)
+    print(f"    {n} páginas del listado", flush=True)
+    return out[:maximo]
+
+
 COLECTORES = {
+    "listado_html": listado_html,
     "shopify": shopify,
     "woocommerce": woocommerce,
     "tiendanube": sitemap_jsonld,
