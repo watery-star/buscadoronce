@@ -434,6 +434,37 @@ def productos_por_codigo(texto_html, url_pagina, prov):
     return out
 
 
+RE_ANCLA = re.compile(r'<a name="([^"]+)" id="[^"]*">\s*</a>\s*<!--\s*anclaje\s*-->', re.I)
+
+
+def productos_anclaje(texto_html, url_pagina, prov):
+    """Catálogos internos (catalogo2021.php / catalogo2024.php): cada producto empieza con
+    <a name="CODIGO"></a> <!-- anclaje --> y sigue con <h1>nombre</h1>, foto, rubro, bulto y precio."""
+    marcas = list(RE_ANCLA.finditer(texto_html))
+    out = []
+    for k, m in enumerate(marcas):
+        fin = marcas[k + 1].start() if k + 1 < len(marcas) else len(texto_html)
+        b = texto_html[m.end():fin]
+        codigo = limpiar_texto(m.group(1))
+        nombre = re.search(r"<h1[^>]*>(.*?)</h1>", b, re.S | re.I)
+        img = re.search(r'<img[^>]+src="([^"]+)"', b, re.I)
+        cat = (re.search(r'class="rubro_centrado"[^>]*>(.*?)</p>', b, re.S | re.I)
+               or re.search(r"Rubro:\s*([^<\n]+)", b))
+        texto = limpiar_texto(b)
+        bulto = re.search(r"(?:Ctdad\.?|Cant\.?)\s*p(?:or|/)\s*bulto:\s*(\d+)", texto, re.I)
+        precio = re.search(r"\$\s*([\d.,]+)", texto)
+        if not (nombre and precio):
+            continue
+        detalle = f"Código: {codigo}" + (f" · Cantidad por bulto: {bulto.group(1)}" if bulto else "")
+        it = item(prov, re.sub(r"(\s*-)+\s*$", "", limpiar_texto(nombre.group(1))), parse_precio(precio.group(1)),
+                  f"{url_pagina.split('#')[0]}#{codigo}", urljoin(url_pagina, img.group(1)) if img else None,
+                  limpiar_texto(cat.group(1)).title() if cat else None, True, detalle)
+        if it:
+            it["_codigo"] = codigo
+            out.append(it)
+    return out
+
+
 def clave_php(prov, maximo, robots):
     base = base_de(prov)
     variable = "CLAVE_" + prov["id"].upper()
@@ -466,9 +497,10 @@ def clave_php(prov, maximo, robots):
         except Exception:
             continue
         if diagnostico is None:
-            pide_clave = bool(re.search(r'type=["\']password', texto, re.I))
+            pide_clave = bool(re.search(r'type=["\']password', re.sub(r"<!--.*?-->", "", texto, flags=re.S), re.I))
             diagnostico = f"primera página: {url_final} ({len(texto)} bytes, {'pide clave' if pide_clave else 'sin formulario de clave'})"
-        for it in productos_por_codigo(texto, url_final, prov):
+        lector = productos_anclaje if RE_ANCLA.search(texto) else productos_por_codigo
+        for it in lector(texto, url_final, prov):
             por_codigo.setdefault(it.pop("_codigo"), it)
         # seguir enlaces del catálogo: rubros, categorías y páginas
         for href in re.findall(r'href=["\']([^"\'#]+)["\']', texto):

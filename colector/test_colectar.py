@@ -181,6 +181,31 @@ class FormatosNuevos(unittest.TestCase):
             colectar.get = Colectores.get_original_global
 
 
+class CatalogosConClave(unittest.TestCase):
+    OESTECH = """<div class="contenedor_producto"> <div class="col-xs-12 descrip"> <a name="ANTI-SPLASH" id="ANTI-SPLASH"></a> <!-- anclaje -->
+      <h1>BEBEDERO ANTI SPLASH 22CM X 22CM</h1> </div> <div class="col-xs-12 foto"> <div class="carousel-inner"> <div class="item active">
+      <a class="miniatura_imagen"> <img src="fotos/ANTI-SPLASH.jpg" data-codigo="ANTI-SPLASH"> </a> </div> </div> </div>
+      <div class="col-xs-12" id="texto"> <p class="rubro_centrado">HOGAR</p><br> <p class="video_centrado"><a href="#"><img src="boton_video_falso.jpg"></a></p>
+      <p class="datos1"><strong>Cód.:</strong> ANTI-SPLASH<br></p> <p class="datos1"> <strong>Cant. p/bulto:</strong> 32<br> </p>
+      <div class="row mi_fila" id="fila_precios"> <p class="datos"><strong>$8.822</strong></p> </div>
+      <form action="agregar_al_carrito.php?cod=ANTI-SPLASH" method="post"><input name="cant"></form> </div> </div>"""
+    LAXSHI = """<div class="col-xs-12 caja_producto"> <div class="col-xs-12" id="descrip"> <a name="14763" id="14763"></a> <!-- anclaje -->
+      <h1>17 EARPODS USB-C</h1> </div> <div class="col-xs-12 col-md-4" id="foto"> <a href="fotos/14763.jpg" target="_blank">
+      <img class="img-responsive" src="fotos/14763.jpg"> </a> </div> <div class="col-xs-12 col-md-8" id="texto"> Codigo: 14763<br>
+      Rubro: AURICULARES <br> Ctdad. por bulto: 1000<br> <br> <strong class="caja_precio_noimptk"> $ 2,323 </strong><br> </div> </div>"""
+
+    def test_oestech_y_laxshi(self):
+        p = {"id": "x", "nombre": "X", "url": "https://x", "plataforma": "clave_php"}
+        o = colectar.productos_anclaje(self.OESTECH, "https://oestech.com.ar/catalogo2024.php?rub=99999", p)[0]
+        self.assertEqual((o["n"], o["p"], o["c"], o["i"], o["u"], o["t"]),
+                         ("BEBEDERO ANTI SPLASH 22CM X 22CM", 8822, "Hogar", "https://oestech.com.ar/fotos/ANTI-SPLASH.jpg",
+                          "https://oestech.com.ar/catalogo2024.php?rub=99999#ANTI-SPLASH", "Código: ANTI-SPLASH · Cantidad por bulto: 32"))
+        l = colectar.productos_anclaje(self.LAXSHI + self.LAXSHI.replace("14763", "13012"), "https://laxshi.com/catalogo2021.php?rub=99999", p)
+        self.assertEqual(len(l), 2)
+        self.assertEqual((l[0]["n"], l[0]["p"], l[0]["c"], l[0]["i"], l[0]["t"]),
+                         ("17 EARPODS USB-C", 2323, "Auriculares", "https://laxshi.com/fotos/14763.jpg", "Código: 14763 · Cantidad por bulto: 1000"))
+
+
 class Listado(unittest.TestCase):
     TARJETA = """<div class="shop_item"> <ul class="slides"><li><a href="/producto/{slug}"><img loading="lazy" src="/uploads/principales/{slug}.png"></a></li></ul>
       <div class="shop_desc pb-0"> <div class="shop_title pull-left"> <a href="/producto/{slug}"> <span>{nombre}</span> </a>
