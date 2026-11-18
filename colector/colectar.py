@@ -80,11 +80,21 @@ class Robots:
         self.rp = RobotFileParser()
         self.sitemaps = []
         try:
-            texto = get(base + "/robots.txt", intentos=1)
+            texto = get(base + "/robots.txt", intentos=2)
             self.rp.parse(texto.splitlines())
             self.sitemaps = re.findall(r"(?im)^\s*sitemap:\s*(\S+)", texto)
-        except Exception:
+            self.estado = "leído"
+        except HTTPError as e:
+            if e.code in (401, 403):
+                # La web no deja leer su robots.txt: por prudencia no se lee nada.
+                self.rp.parse(["User-agent: *", "Disallow: /"])
+                self.estado = f"bloqueado ({e.code})"
+            else:
+                self.rp.parse([])
+                self.estado = f"no existe ({e.code})"
+        except Exception as e:
             self.rp.parse([])
+            self.estado = f"no se pudo leer ({type(e).__name__})"
 
     def permite(self, url):
         return self.rp.can_fetch(UA, url)
@@ -189,8 +199,9 @@ def woocommerce(prov, maximo, robots):
     """Primero prueba la Store API pública de WooCommerce; si está cerrada, usa sitemap + datos estructurados."""
     base = base_de(prov)
     out = []
-    if not robots.permite(f"{base}/wp-json/wc/store/v1/products"):
-        print("    robots.txt no permite la Store API; uso el sitemap", flush=True)
+    if robots.estado != "leído" and not robots.estado.startswith("no existe") \
+            or not robots.permite(f"{base}/wp-json/wc/store/v1/products"):
+        print("    robots.txt no permite (o no confirma) la Store API; uso el sitemap", flush=True)
         return sitemap_jsonld(prov, maximo, robots)
     try:
         for pagina in range(1, 500):
@@ -246,7 +257,8 @@ def urls_de_productos(prov, robots, maximo):
         locs = [html.unescape(x.strip()) for x in re.findall(r"<loc>\s*(.*?)\s*</loc>", xml, re.S)]
         if "<sitemapindex" in xml:
             # Primero los sitemaps de productos; se saltean los de posts, páginas, autores, etc.
-            locs = [u for u in locs if not re.search(r"(post|page|author|tag|blog|news)[-_]?sitemap|sitemap[-_]?(post|page|author|tag)", u, re.I)]
+            locs = [u for u in locs if re.search(r"product", u, re.I) or not re.search(
+                r"(post|page|author|tag|blog|news|user|taxonom)[-_]?sitemap|sitemap[-_]?(post|page|author|tag|user|taxonom)", u, re.I)]
             locs.sort(key=lambda u: 0 if re.search(r"product", u, re.I) else 1)
             pendientes = locs + pendientes
             continue
@@ -488,6 +500,10 @@ def clave_php(prov, maximo, robots):
     elif prov.get("login"):
         print(f"    sin clave ({variable} no está cargada): solo se leen los productos públicos", flush=True)
 
+    try:
+        abrir(base + "/")  # algunas webs arman la sesión en la portada antes de mostrar el catálogo
+    except Exception:
+        pass
     pendientes = [urljoin(base + "/", prov.get("catalogo", "")), base + "/"]
     vistas, diagnostico = set(), None
     while pendientes and len(vistas) < 400 and len(por_codigo) < maximo:
@@ -682,6 +698,7 @@ def main():
         t0 = time.time()
         try:
             robots = Robots(base_de(prov))
+            print(f"    robots.txt: {robots.estado}", flush=True)
             nuevos = colector(prov, prov.get("max", args.max), robots) if colector else []
             vistos, unicos = set(), []
             for it in nuevos:

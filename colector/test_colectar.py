@@ -17,6 +17,7 @@ PROV_WC = {"id": "wc", "nombre": "Woo", "url": "https://woo.com", "plataforma": 
 
 class SinRobots:
     sitemaps = []
+    estado = "leído"
 
     def permite(self, url):
         return True
@@ -204,6 +205,26 @@ class CatalogosConClave(unittest.TestCase):
         self.assertEqual(len(l), 2)
         self.assertEqual((l[0]["n"], l[0]["p"], l[0]["c"], l[0]["i"], l[0]["t"]),
                          ("17 EARPODS USB-C", 2323, "Auriculares", "https://laxshi.com/fotos/14763.jpg", "Código: 14763 · Cantidad por bulto: 1000"))
+
+
+class Prudencia(unittest.TestCase):
+    def test_robots_bloqueado_y_sitemap_de_wordpress(self):
+        from urllib.error import HTTPError
+        colectar.get = lambda url, intentos=3: (_ for _ in ()).throw(HTTPError(url, 403, "no", {}, None))
+        try:
+            r = colectar.Robots("https://x.com")
+        finally:
+            colectar.get = Colectores.get_original_global
+        self.assertFalse(r.permite("https://x.com/producto/a/"))
+        self.assertTrue(r.estado.startswith("bloqueado"))
+        colectar.get = falso_get({
+            "https://woo.com/sitemap.xml": "<sitemapindex><sitemap><loc>https://woo.com/wp-sitemap-posts-post-1.xml</loc></sitemap>"
+                                           "<sitemap><loc>https://woo.com/wp-sitemap-posts-product-1.xml</loc></sitemap></sitemapindex>",
+            "https://woo.com/wp-sitemap-posts-product-1.xml": "<urlset><url><loc>https://woo.com/producto/foco/</loc></url></urlset>"})
+        try:
+            self.assertEqual(colectar.urls_de_productos(PROV_WC, SinRobots(), 10), ["https://woo.com/producto/foco/"])
+        finally:
+            colectar.get = Colectores.get_original_global
 
 
 class Listado(unittest.TestCase):
