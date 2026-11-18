@@ -189,6 +189,9 @@ def woocommerce(prov, maximo, robots):
     """Primero prueba la Store API pública de WooCommerce; si está cerrada, usa sitemap + datos estructurados."""
     base = base_de(prov)
     out = []
+    if not robots.permite(f"{base}/wp-json/wc/store/v1/products"):
+        print("    robots.txt no permite la Store API; uso el sitemap", flush=True)
+        return sitemap_jsonld(prov, maximo, robots)
     try:
         for pagina in range(1, 500):
             url = f"{base}/wp-json/wc/store/v1/products?per_page=100&page={pagina}"
@@ -479,11 +482,11 @@ def clave_php(prov, maximo, robots):
             return r.geturl(), r.read().decode(charset, errors="replace")
 
     por_codigo = {}
-    if clave:
-        url_login = urljoin(base + "/", prov.get("login", "index.php"))
+    if clave and prov.get("login"):
+        url_login = urljoin(base + "/", prov["login"])
         abrir(url_login, {"clave": clave, "enviar": "Ingresar"})
-    else:
-        print(f"    sin clave ({variable} no está cargada): solo se leen los productos de la portada", flush=True)
+    elif prov.get("login"):
+        print(f"    sin clave ({variable} no está cargada): solo se leen los productos públicos", flush=True)
 
     pendientes = [urljoin(base + "/", prov.get("catalogo", "")), base + "/"]
     vistas, diagnostico = set(), None
