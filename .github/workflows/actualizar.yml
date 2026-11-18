@@ -25,7 +25,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main  # siempre la versión más reciente, con los datos de la última carga
+          ref: main  # siempre la versión más reciente del código
+
+      - name: Traer los datos de la última carga
+        run: |
+          if git fetch -q --depth=1 origin datos; then
+            git show FETCH_HEAD:productos.json > docs/productos.json
+            echo "Datos anteriores tomados de la rama datos"
+          else
+            echo "Todavía no hay rama datos: se usa docs/productos.json del repositorio"
+          fi
 
       - uses: actions/setup-python@v5
         with:
@@ -50,15 +59,16 @@ jobs:
             python colector/colectar.py
           fi
 
-      - name: Guardar resultados
+      - name: Publicar en la rama datos (se reemplaza entera, así el repositorio no crece)
         run: |
+          mkdir -p /tmp/sitio
+          cp -r docs/. /tmp/sitio/
+          touch /tmp/sitio/.nojekyll
+          cd /tmp/sitio
+          git init -q -b datos
           git config user.name "buscador-bot"
           git config user.email "buscador-bot@users.noreply.github.com"
-          git add docs/productos.json
-          if git diff --cached --quiet; then
-            echo "Sin cambios"
-          else
-            git commit -m "Actualizar productos $(date -u +%Y-%m-%d)"
-            git pull --rebase
-            git push
-          fi
+          git add -A
+          git commit -q -m "Productos $(date -u +%Y-%m-%d)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" datos
+          echo "Publicado: $(du -h productos.json | cut -f1) de datos"
