@@ -299,8 +299,10 @@ def urls_por_rastreo(prov, robots, maximo):
             continue
         for m in re_prod.finditer(texto):
             enlace = urljoin(url, html.unescape(next(g for g in m.groups() if g)))
-            if robots.permite(enlace):
-                productos.setdefault(enlace, True)
+            # El mismo producto puede aparecer en varias categorías con otra ruta: se cuenta una vez.
+            clave = urlparse(enlace).path.rstrip("/").rsplit("/", 1)[-1]
+            if clave not in productos and robots.permite(enlace):
+                productos[clave] = enlace
         for href in re.findall(r'href=["\']([^"\'#]+)["\']', texto):
             destino = urljoin(url, html.unescape(href))
             if destino in en_cola or not re_seguir.search(destino) or (re_excluir and re_excluir.search(destino)):
@@ -309,7 +311,7 @@ def urls_por_rastreo(prov, robots, maximo):
             pendientes.append(destino)
         esperar(robots)
     print(f"    {len(vistas)} páginas de categorías recorridas", flush=True)
-    return list(productos)[:maximo]
+    return list(productos.values())[:maximo]
 
 
 def urls_de_productos(prov, robots, maximo):
@@ -498,6 +500,8 @@ def sitemap_jsonld(prov, maximo, robots):
                 out.append(it)
             else:
                 sin_datos += 1
+            if i % 1000 == 0:
+                print(f"    {i} de {len(urls)} páginas leídas ({len(out)} productos)", flush=True)
             # Si muchas páginas seguidas no tienen datos de producto, no tiene sentido seguir.
             if i == LIMITE_SIN_DATOS and not out:
                 print(f"    las primeras {LIMITE_SIN_DATOS} páginas no tienen datos de producto; corto", flush=True)
