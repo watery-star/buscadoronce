@@ -294,6 +294,26 @@ class CategoriasSinPaginar(unittest.TestCase):
         self.assertTrue(r.permite("https://x.com/categoria/bazar"))
 
 
+class ProductosRelacionados(unittest.TestCase):
+    def _pagina(self, con_url):
+        def ld(nombre, precio, url=None):
+            u = f'"url": "{url}",' if url else ""
+            return ('<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product",'
+                    f'"name":"{nombre}",{u}"offers":{{"@type":"Offer","price":"{precio}","availability":"https://schema.org/InStock"}}}}</script>')
+        return ('<meta property="og:title" content="Balanza Electronica 10kg"><meta property="product:price:amount" content="5200">'
+                + ld("Plancha Silpat", 3620) + ld("Balanza Electronica 10kg", 5200, "https://x.com/productos/balanza/" if con_url else None))
+
+    def test_toma_el_producto_de_la_pagina_por_url(self):
+        prov = {"id": "x", "nombre": "X", "url": "https://x.com", "plataforma": "tiendanube"}
+        it = colectar.extraer_producto(self._pagina(True), "https://x.com/productos/balanza/", prov)
+        self.assertEqual((it["n"], it["p"]), ("Balanza Electronica 10kg", 5200))
+
+    def test_toma_el_producto_de_la_pagina_por_titulo(self):
+        prov = {"id": "x", "nombre": "X", "url": "https://x.com", "plataforma": "tiendanube"}
+        it = colectar.extraer_producto(self._pagina(False), "https://x.com/productos/balanza/", prov)
+        self.assertEqual((it["n"], it["p"]), ("Balanza Electronica 10kg", 5200))
+
+
 class Listado(unittest.TestCase):
     TARJETA = """<div class="shop_item"> <ul class="slides"><li><a href="/producto/{slug}"><img loading="lazy" src="/uploads/principales/{slug}.png"></a></li></ul>
       <div class="shop_desc pb-0"> <div class="shop_title pull-left"> <a href="/producto/{slug}"> <span>{nombre}</span> </a>

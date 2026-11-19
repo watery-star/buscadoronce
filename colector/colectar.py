@@ -399,6 +399,32 @@ def _meta(texto, prop):
     return html.unescape(m.group(1)).strip() if m else None
 
 
+def _producto_de_la_pagina(nodos, texto, url):
+    """Elige el Product que corresponde a ESTA página. Muchas webs (Tiendanube, etc.) suman los datos
+    de los "productos relacionados" en la misma página: tomar el primero mezcla nombres y precios."""
+    candidatos = [n for n in nodos if {"Product", "ProductGroup"} & set(_tipo(n))]
+    if len(candidatos) <= 1:
+        return candidatos[0] if candidatos else None
+    ruta = urlparse(url).path.rstrip("/")
+
+    def misma_ruta(v):
+        if isinstance(v, dict):
+            v = v.get("@id") or v.get("url")
+        return isinstance(v, str) and urlparse(v).path.rstrip("/") == ruta
+
+    for n in candidatos:
+        ofertas = n.get("offers")
+        ofertas = ofertas if isinstance(ofertas, list) else [ofertas]
+        if misma_ruta(n.get("url")) or misma_ruta(n.get("@id")) or any(misma_ruta(o) for o in ofertas if isinstance(o, dict)):
+            return n
+    titulo = limpiar_texto(_meta(texto, "og:title") or "").lower()
+    if titulo:
+        for n in candidatos:
+            if limpiar_texto(n.get("name")).lower() == titulo:
+                return n
+    return None  # ambiguo: se usan los metadatos de la propia página (OpenGraph)
+
+
 def extraer_producto(texto, url, prov):
     """Saca nombre, precio, imagen y categoría de la página de un producto."""
     bloques = re.findall(r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", texto, re.S | re.I)
@@ -413,7 +439,7 @@ def extraer_producto(texto, url, prov):
             except ValueError:
                 continue
 
-    producto = next((n for n in nodos if {"Product", "ProductGroup"} & set(_tipo(n))), None)
+    producto = _producto_de_la_pagina(nodos, texto, url)
     categoria = None
     migas = next((n for n in nodos if "BreadcrumbList" in _tipo(n)), None)
     if migas:
