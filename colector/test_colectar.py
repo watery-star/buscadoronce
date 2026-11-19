@@ -340,6 +340,19 @@ class ProductosRelacionados(unittest.TestCase):
         it = colectar.extraer_producto(pagina, "https://x.com/productos/balanza/", prov)
         self.assertEqual((it["n"], it["p"], it["c"]), ("Balanza 10kg", 5200, "Cocina"))
 
+    def test_precio_en_dolares_se_pasa_a_pesos(self):
+        # Como en Planeta Once: el JSON-LD trae US$ 0,81 y la web muestra $ 1.320,30 con su cotización.
+        pagina = ('<span id="usd-ars-rate" data-usd-ars-rate="1630" title="Cotización"></span>'
+                  '<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"SOPORTE 500u",'
+                  '"offers":{"@type":"Offer","url":"https://x.com/products/A1","priceCurrency":"USD","price":0.81,'
+                  '"availability":"https://schema.org/InStock"}}</script>')
+        prov = {"id": "x", "nombre": "X", "url": "https://x.com", "plataforma": "a_medida"}
+        it = colectar.extraer_producto(pagina, "https://x.com/products/A1", prov)
+        self.assertEqual(it["p"], 1320.3)
+        self.assertIn("US$ 0,81", it["t"])
+        sin_cotizacion = pagina.replace('data-usd-ars-rate="1630"', '')
+        self.assertIsNone(colectar.extraer_producto(sin_cotizacion, "https://x.com/products/A1", prov))
+
 
 class Listado(unittest.TestCase):
     TARJETA = """<div class="shop_item"> <ul class="slides"><li><a href="/producto/{slug}"><img loading="lazy" src="/uploads/principales/{slug}.png"></a></li></ul>

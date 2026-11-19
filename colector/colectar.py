@@ -442,6 +442,20 @@ def _producto_de_la_pagina(nodos, texto, url):
     return None
 
 
+def _moneda(producto):
+    for o in _aplanar(producto.get("offers") or []):
+        m = str(o.get("priceCurrency") or "").upper()
+        if m:
+            return m
+    return ""
+
+
+def _cotizacion_usd(texto):
+    """Cotización del dólar que usa la propia web para pasar a pesos (si la publica)."""
+    m = re.search(r'data-usd-ars-rate=\\?["\']?([\d.,]+)', texto)
+    return parse_precio(m.group(1)) if m else None
+
+
 def extraer_producto(texto, url, prov):
     """Saca nombre, precio, imagen y categoría de la página de un producto."""
     bloques = re.findall(r"<script[^>]+application/ld\+json[^>]*>(.*?)</script>", texto, re.S | re.I)
@@ -477,9 +491,20 @@ def extraer_producto(texto, url, prov):
         cat = producto.get("category")
         if isinstance(cat, dict):
             cat = cat.get("name")
+        descripcion = producto.get("description") or _meta(texto, "og:description")
+        if precio and _moneda(producto) == "USD":
+            # Algunas tiendas (p. ej. en Planeta Once) publican en dólares y la web los pasa a pesos
+            # con su propia cotización: se usa esa misma, para mostrar lo que ve el cliente.
+            cotizacion = _cotizacion_usd(texto)
+            if not cotizacion:
+                return None  # sin cotización no se puede dar un precio en pesos confiable
+            usd = precio
+            precio = round(usd * cotizacion, 2)
+            nota = f"Precio publicado en dólares: US$ {usd:,.2f} (cotización de la web: ${cotizacion:,.0f})"
+            nota = nota.replace(",", "X").replace(".", ",").replace("X", ".")
+            descripcion = f"{nota}. {descripcion}" if descripcion else nota
         return item(prov, producto.get("name"), precio, url,
-                    _imagen(producto.get("image")), categoria or cat, disponible,
-                    producto.get("description") or _meta(texto, "og:description"))
+                    _imagen(producto.get("image")), categoria or cat, disponible, descripcion)
 
     # Sin JSON-LD: metadatos OpenGraph / microdatos (muchas Tiendanube y webs a medida los tienen)
     precio = parse_precio(_meta(texto, "product:price:amount") or _meta(texto, "og:price:amount")
