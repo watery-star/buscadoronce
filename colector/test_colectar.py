@@ -313,6 +313,33 @@ class ProductosRelacionados(unittest.TestCase):
         it = colectar.extraer_producto(self._pagina(False), "https://x.com/productos/balanza/", prov)
         self.assertEqual((it["n"], it["p"]), ("Balanza Electronica 10kg", 5200))
 
+    def test_tiendanube_sin_producto_principal(self):
+        # Como en MZ Store: solo están los relacionados (con mainEntityOfPage de otra página) y el precio en tiendanube:price.
+        rel = ('<script type="application/ld+json">{"@context":"https://schema.org/","@type":"Product",'
+               '"mainEntityOfPage":{"@type":"WebPage","@id":"https://x.com/productos/plancha/"},"name":"Plancha Silpat",'
+               '"offers":{"@type":"Offer","price":"3620"}}</script>')
+        pagina = ('<meta property="og:title" content="Balanza Electronica 10kg" />'
+                  '<meta property="og:image:secure_url" content="https://img/b.webp" />'
+                  '<meta property="tiendanube:price" content="5200" /><meta property="tiendanube:stock" content="0" />' + rel)
+        prov = {"id": "x", "nombre": "X", "url": "https://x.com", "plataforma": "tiendanube"}
+        it = colectar.extraer_producto(pagina, "https://x.com/productos/balanza/", prov)
+        self.assertEqual((it["n"], it["p"], it["i"], it["d"]), ("Balanza Electronica 10kg", 5200, "https://img/b.webp", 0))
+
+    def test_tiendanube_producto_dentro_de_la_pagina(self):
+        pagina = ('<meta property="og:title" content="Balanza 10kg" />'
+                  '<script type="application/ld+json">{"@context":"https://schema.org/","@type":"WebPage","name":"x",'
+                  '"breadcrumb":{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Inicio","item":"https://x.com"},'
+                  '{"@type":"ListItem","position":2,"name":"Cocina","item":"https://x.com/cocina/"},'
+                  '{"@type":"ListItem","position":3,"name":"Balanza 10kg","item":"https://x.com/productos/balanza/"}]},'
+                  '"mainEntity":{"@type":"Product","@id":"https://x.com/productos/balanza/","name":"Balanza 10kg",'
+                  '"offers":{"@type":"Offer","url":"https://x.com/productos/balanza/","price":"5200","availability":"https://schema.org/InStock"}}}</script>'
+                  '<script type="application/ld+json">{"@context":"https://schema.org/","@type":"Product",'
+                  '"mainEntityOfPage":{"@type":"WebPage","@id":"https://x.com/productos/plancha/"},"name":"Plancha",'
+                  '"offers":{"@type":"Offer","price":"3620"}}</script>')
+        prov = {"id": "x", "nombre": "X", "url": "https://x.com", "plataforma": "tiendanube"}
+        it = colectar.extraer_producto(pagina, "https://x.com/productos/balanza/", prov)
+        self.assertEqual((it["n"], it["p"], it["c"]), ("Balanza 10kg", 5200, "Cocina"))
+
 
 class Listado(unittest.TestCase):
     TARJETA = """<div class="shop_item"> <ul class="slides"><li><a href="/producto/{slug}"><img loading="lazy" src="/uploads/principales/{slug}.png"></a></li></ul>

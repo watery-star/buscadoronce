@@ -357,6 +357,10 @@ def _aplanar(d):
         if "@graph" in d:
             yield from _aplanar(d["@graph"])
         yield d
+        # Tiendanube pone el producto principal y las migas dentro de la WebPage.
+        for clave in ("mainEntity", "breadcrumb"):
+            if isinstance(d.get(clave), (dict, list)):
+                yield from _aplanar(d[clave])
 
 
 def _tipo(d):
@@ -403,28 +407,39 @@ def _meta(texto, prop):
 
 def _producto_de_la_pagina(nodos, texto, url):
     """Elige el Product que corresponde a ESTA página. Muchas webs (Tiendanube, etc.) suman los datos
-    de los "productos relacionados" en la misma página: tomar el primero mezcla nombres y precios."""
-    candidatos = [n for n in nodos if {"Product", "ProductGroup"} & set(_tipo(n))]
-    if len(candidatos) <= 1:
-        return candidatos[0] if candidatos else None
+    de los "productos relacionados" en la misma página, y a veces el producto principal ni siquiera
+    está: tomar el primero mezcla nombres y precios. Si no hay uno que sea claramente de esta página,
+    devuelve None y se usan los metadatos de la propia página (OpenGraph / tiendanube:price)."""
     ruta = urlparse(url).path.rstrip("/")
 
-    def misma_ruta(v):
-        if isinstance(v, dict):
-            v = v.get("@id") or v.get("url")
-        return isinstance(v, str) and urlparse(v).path.rstrip("/") == ruta
-
-    for n in candidatos:
+    def rutas_declaradas(n):
+        vals = [n.get("url"), n.get("@id"), n.get("mainEntityOfPage")]
         ofertas = n.get("offers")
-        ofertas = ofertas if isinstance(ofertas, list) else [ofertas]
-        if misma_ruta(n.get("url")) or misma_ruta(n.get("@id")) or any(misma_ruta(o) for o in ofertas if isinstance(o, dict)):
+        vals += ofertas if isinstance(ofertas, list) else [ofertas]
+        out = set()
+        for v in vals:
+            if isinstance(v, dict):
+                v = v.get("@id") or v.get("url")
+            if isinstance(v, str) and v.startswith(("http", "/")):
+                out.add(urlparse(v).path.rstrip("/"))
+        return out
+
+    candidatos = [n for n in nodos if {"Product", "ProductGroup"} & set(_tipo(n))]
+    sin_ruta = []
+    for n in candidatos:
+        rutas = rutas_declaradas(n)
+        if ruta in rutas:
             return n
+        if not rutas or rutas == {""}:
+            sin_ruta.append(n)  # no dice de qué página es
     titulo = limpiar_texto(_meta(texto, "og:title") or "").lower()
     if titulo:
         for n in candidatos:
             if limpiar_texto(n.get("name")).lower() == titulo:
                 return n
-    return None  # ambiguo: se usan los metadatos de la propia página (OpenGraph)
+    if len(sin_ruta) == 1 and len(candidatos) == 1:
+        return sin_ruta[0]
+    return None
 
 
 def extraer_producto(texto, url, prov):
@@ -467,14 +482,18 @@ def extraer_producto(texto, url, prov):
                     producto.get("description") or _meta(texto, "og:description"))
 
     # Sin JSON-LD: metadatos OpenGraph / microdatos (muchas Tiendanube y webs a medida los tienen)
-    precio = parse_precio(_meta(texto, "product:price:amount") or _meta(texto, "og:price:amount") or _meta(texto, "price"))
+    precio = parse_precio(_meta(texto, "product:price:amount") or _meta(texto, "og:price:amount")
+                          or _meta(texto, "tiendanube:price") or _meta(texto, "price"))
     nombre = _meta(texto, "og:title")
     if not (precio and nombre):
         return None
     disp = (_meta(texto, "product:availability") or _meta(texto, "og:availability") or "instock").lower()
-    return item(prov, nombre, precio, url, _meta(texto, "og:image"), categoria,
-                not any(x in disp for x in ("out", "oos", "agotado", "sin stock")),
-                _meta(texto, "og:description"))
+    disponible = not any(x in disp for x in ("out", "oos", "agotado", "sin stock"))
+    stock = _meta(texto, "tiendanube:stock")
+    if stock is not None and re.fullmatch(r"-?\d+", stock.strip()):
+        disponible = int(stock) > 0
+    return item(prov, nombre, precio, url, _meta(texto, "og:image:secure_url") or _meta(texto, "og:image"), categoria,
+                disponible, _meta(texto, "og:description"))
 
 
 def sitemap_jsonld(prov, maximo, robots):
