@@ -79,9 +79,11 @@ class Robots:
     def __init__(self, base):
         self.rp = RobotFileParser()
         self.sitemaps = []
+        self.comodines = []
         try:
             texto = get(base + "/robots.txt", intentos=2)
             self.rp.parse(texto.splitlines())
+            self.comodines = _reglas_con_comodin(texto)
             self.sitemaps = re.findall(r"(?im)^\s*sitemap:\s*(\S+)", texto)
             self.estado = "leído"
         except HTTPError as e:
@@ -102,7 +104,35 @@ class Robots:
             self.demora = 0
 
     def permite(self, url):
-        return self.rp.can_fetch(UA, url)
+        if not self.rp.can_fetch(UA, url):
+            return False
+        partes = urlparse(url)
+        ruta = (partes.path or "/") + ("?" + partes.query if partes.query else "")
+        return not any(r.match(ruta) for r in self.comodines)
+
+
+def _reglas_con_comodin(texto):
+    """Disallow con * o $ (el lector de robots.txt de Python 3.12 no los entiende): se aplican
+    aparte, para el grupo "User-agent: *" o el nuestro. Por prudencia no se miran los Allow."""
+    reglas, aplica, en_agentes = [], False, False
+    for linea in texto.splitlines():
+        linea = linea.split("#", 1)[0].strip()
+        if ":" not in linea:
+            continue
+        clave, valor = (x.strip() for x in linea.split(":", 1))
+        clave = clave.lower()
+        if clave == "user-agent":
+            if not en_agentes:
+                aplica = False
+            en_agentes = True
+            if valor == "*" or (valor and valor.lower() in UA.lower()):
+                aplica = True
+            continue
+        en_agentes = False
+        if clave == "disallow" and aplica and valor and ("*" in valor or valor.endswith("$")):
+            patron = re.escape(valor.rstrip("$")).replace(r"\*", ".*") + ("$" if valor.endswith("$") else "")
+            reglas.append(re.compile(patron))
+    return reglas
 
 
 def esperar(robots):
