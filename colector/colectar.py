@@ -96,8 +96,18 @@ class Robots:
             self.rp.parse([])
             self.estado = f"no se pudo leer ({type(e).__name__})"
 
+        try:
+            self.demora = float(self.rp.crawl_delay(UA) or 0)
+        except Exception:
+            self.demora = 0
+
     def permite(self, url):
         return self.rp.can_fetch(UA, url)
+
+
+def esperar(robots):
+    """Pausa entre pedidos: la nuestra o la que pide la web en su robots.txt (Crawl-delay), la que sea mayor."""
+    time.sleep(max(PAUSA, getattr(robots, "demora", 0) or 0))
 
 
 # ---------------------------------------------------------------- utilidades
@@ -189,7 +199,7 @@ def shopify(prov, maximo, robots):
                 out.append(it)
         if len(out) >= maximo:
             break
-        time.sleep(PAUSA)
+        esperar(robots)
     return out[:maximo]
 
 
@@ -226,7 +236,7 @@ def woocommerce(prov, maximo, robots):
                     out.append(it)
             if len(out) >= maximo or len(datos) < 100:
                 break
-            time.sleep(PAUSA)
+            esperar(robots)
         if out:
             return out[:maximo]
     except (HTTPError, ValueError) as e:
@@ -239,7 +249,42 @@ def woocommerce(prov, maximo, robots):
 # un sitemap.xml y, en cada producto, un bloque JSON-LD (schema.org/Product)
 # o metadatos OpenGraph con el precio.
 
+def urls_por_rastreo(prov, robots, maximo):
+    """Para webs con sitemap viejo o sin sitemap: recorre las categorías y sus páginas
+    (según la expresión "seguir") y junta los enlaces de producto (expresión "producto")."""
+    cfg = prov["rastreo"]
+    base = base_de(prov)
+    re_seguir, re_prod = re.compile(cfg["seguir"]), re.compile(cfg["producto"])
+    re_excluir = re.compile(cfg["excluir"]) if cfg.get("excluir") else None
+    pendientes = [urljoin(base + "/", u) for u in cfg.get("inicio", ["/"])]
+    en_cola, vistas, productos = set(pendientes), set(), {}
+    while pendientes and len(vistas) < cfg.get("paginas_max", 3000) and len(productos) < maximo:
+        url = pendientes.pop(0)
+        vistas.add(url)
+        if not robots.permite(url):
+            continue
+        try:
+            texto = get(url, intentos=2)
+        except Exception:
+            continue
+        for m in re_prod.finditer(texto):
+            enlace = urljoin(url, html.unescape(next(g for g in m.groups() if g)))
+            if robots.permite(enlace):
+                productos.setdefault(enlace, True)
+        for href in re.findall(r'href=["\']([^"\'#]+)["\']', texto):
+            destino = urljoin(url, html.unescape(href))
+            if destino in en_cola or not re_seguir.search(destino) or (re_excluir and re_excluir.search(destino)):
+                continue
+            en_cola.add(destino)
+            pendientes.append(destino)
+        esperar(robots)
+    print(f"    {len(vistas)} páginas de categorías recorridas", flush=True)
+    return list(productos)[:maximo]
+
+
 def urls_de_productos(prov, robots, maximo):
+    if prov.get("rastreo"):
+        return urls_por_rastreo(prov, robots, maximo)
     base = base_de(prov)
     patron = prov.get("patron") or PATRONES_PRODUCTO.get(prov["plataforma"])
     pendientes = list(dict.fromkeys(robots.sitemaps + [base + "/sitemap.xml"]))
@@ -386,11 +431,12 @@ def sitemap_jsonld(prov, maximo, robots):
         except Exception:
             return None
         finally:
-            time.sleep(PAUSA)
+            esperar(robots)
         return extraer_producto(texto, u, prov)
 
     out, sin_datos = [], 0
-    with ThreadPoolExecutor(prov.get("hilos", HILOS)) as pool:
+    hilos = 1 if getattr(robots, "demora", 0) else prov.get("hilos", HILOS)
+    with ThreadPoolExecutor(hilos) as pool:
         for i, it in enumerate(pool.map(bajar, urls), 1):
             if it:
                 out.append(it)
@@ -530,7 +576,7 @@ def clave_php(prov, maximo, robots):
                 continue
             if re.search(r"(rubro|rub=|categoria|catalogo|listado|pag(ina)?=|page=|index2|productos)", destino, re.I) and destino not in vistas:
                 pendientes.append(destino)
-        time.sleep(PAUSA)
+        esperar(robots)
     if not por_codigo:
         print(f"    {diagnostico}", flush=True)
     else:
@@ -555,7 +601,7 @@ def item_de_tarjeta(prov, t):
     imagen = t.get("imagen") or ""
     if "placehold" in imagen or imagen.startswith("data:"):
         imagen = ""
-    codigo = re.sub(r"^C[óo]digo:\s*", "", t.get("codigo") or "", flags=re.I).strip()
+    codigo = re.sub(r"^C[óo]d(igo)?\.?:\s*", "", t.get("codigo") or "", flags=re.I).strip()
     extra = t.get("extra") or ""
     extra = re.sub(r"(?i)cantidad por bulto:", "Cantidad por bulto:", extra.title()) if extra.isupper() else extra
     detalle = " · ".join(x for x in (f"Código: {codigo}" if codigo else "", extra) if x)
@@ -605,7 +651,7 @@ def _tarjetas_listado(texto, cfg):
     out = []
     for parte in partes:
         datos = {}
-        for campo in ("link", "imagen", "nombre", "categoria", "precio"):
+        for campo in ("link", "imagen", "nombre", "categoria", "precio", "codigo", "descripcion"):
             m = re.search(cfg[campo], parte) if cfg.get(campo) else None
             datos[campo] = limpiar_texto(m.group(1)) if m else ""
         out.append(datos)
@@ -613,31 +659,55 @@ def _tarjetas_listado(texto, cfg):
 
 
 def listado_html(prov, maximo, robots):
+    """Listados HTML. Dos modos:
+    - "url" con {n}: páginas numeradas (/tienda?page=1, 2, ...) hasta que no haya productos nuevos.
+    - "categorias": expresión que encuentra en la portada los enlaces a cada categoría; se lee la
+      primera página de cada una (para webs cuyo robots.txt no permite paginar)."""
     base = base_de(prov)
     cfg = prov["listado"]
-    vistos, out = set(), []
-    for n in range(1, cfg.get("paginas_max", 300) + 1):
-        url = urljoin(base + "/", cfg["url"].format(n=n))
+    por_categorias = bool(cfg.get("categorias"))
+    if por_categorias:
+        portada = get(base + "/")
+        paginas = list(dict.fromkeys(urljoin(base + "/", html.unescape(h)) for h in re.findall(cfg["categorias"], portada)))
+        print(f"    {len(paginas)} categorías en la portada", flush=True)
+    else:
+        paginas = (urljoin(base + "/", cfg["url"].format(n=n)) for n in range(1, cfg.get("paginas_max", 300) + 1))
+    vistos, out, leidas = set(), [], 0
+    for url in paginas:
         if not robots.permite(url):
+            if por_categorias:
+                continue
             raise RuntimeError(f"robots.txt no permite leer {url}")
-        tarjetas = _tarjetas_listado(get(url), cfg)
+        try:
+            texto = get(url)
+        except Exception:
+            if por_categorias:
+                continue
+            raise
+        leidas += 1
+        tarjetas = _tarjetas_listado(texto, cfg)
         nuevas = [t for t in tarjetas if t["link"] and t["link"] not in vistos]
-        if not nuevas:  # página vacía o repetida: se terminó el listado
+        if not nuevas and not por_categorias:  # página vacía o repetida: se terminó el listado
             break
         for t in nuevas:
             vistos.add(t["link"])
-            precios = [x for x in (parse_precio(v) for v in re.findall(r"\$\s*[\d.,]+", t["precio"])) if x]
-            detalle = ""
+            precios = [x for x in (parse_precio(v) for v in re.findall(r"\$?\s*[\d.,]+", t["precio"])) if x]
+            partes = []
+            if t["codigo"]:
+                partes.append(f"Código: {t['codigo']}")
             if len(precios) > 1:
-                detalle = "Precios publicados: " + " a ".join(f"${x:,.0f}".replace(",", ".") for x in sorted(precios))
+                partes.append("Precios publicados: " + " a ".join(f"${x:,.0f}".replace(",", ".") for x in sorted(precios)))
+            if t["descripcion"]:
+                partes.append(t["descripcion"])
             it = item(prov, t["nombre"], min(precios) if precios else None, urljoin(base + "/", t["link"]),
-                      urljoin(base + "/", t["imagen"]) if t["imagen"] else None, t["categoria"].title(), True, detalle)
+                      urljoin(base + "/", t["imagen"]) if t["imagen"] else None, t["categoria"].title(), True,
+                      " · ".join(partes))
             if it:
                 out.append(it)
         if len(out) >= maximo:
             break
-        time.sleep(PAUSA)
-    print(f"    {n} páginas del listado", flush=True)
+        esperar(robots)
+    print(f"    {leidas} páginas del listado", flush=True)
     return out[:maximo]
 
 

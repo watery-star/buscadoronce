@@ -18,6 +18,7 @@ PROV_WC = {"id": "wc", "nombre": "Woo", "url": "https://woo.com", "plataforma": 
 class SinRobots:
     sitemaps = []
     estado = "leído"
+    demora = 0
 
     def permite(self, url):
         return True
@@ -229,6 +230,68 @@ class Prudencia(unittest.TestCase):
             self.assertEqual(colectar.urls_de_productos(PROV_WC, SinRobots(), 10), ["https://woo.com/producto/foco/"])
         finally:
             colectar.get = Colectores.get_original_global
+
+
+class Rastreo(unittest.TestCase):
+    def test_deonce_por_categorias(self):
+        prov = next(p for p in json.loads(Path(__file__).resolve().parent.parent.joinpath("proveedores.json").read_text(encoding="utf-8"))
+                    if p["id"] == "deonce")
+        tarjeta = '<div class="ut2-gl__name"> <a href="https://deonce.com.ar/hogar/{0}/" class="product-title" title="X">X</a></div>'
+        colectar.get = falso_get({
+            "https://deonce.com.ar/": '<a href="https://deonce.com.ar/hogar-y-blanco/">Hogar</a><a href="https://deonce.com.ar/carrito/">c</a>',
+            "https://deonce.com.ar/hogar-y-blanco/": tarjeta.format("a") + '<a href="https://deonce.com.ar/hogar-y-blanco/page-2/">2</a>',
+            "https://deonce.com.ar/hogar-y-blanco/page-2/": tarjeta.format("b") + tarjeta.format("a"),
+        })
+        colectar.PAUSA = 0
+        try:
+            urls = colectar.urls_de_productos(prov, SinRobots(), 100)
+        finally:
+            colectar.get = Colectores.get_original_global
+        self.assertEqual(urls, ["https://deonce.com.ar/hogar/a/", "https://deonce.com.ar/hogar/b/"])
+
+
+class CategoriasSinPaginar(unittest.TestCase):
+    TARJETA = """<div class="itemWrapper col"> <div class="item item-first" id="item_3568467"> <div class="item-image">
+      <a href="/catalogo/3568467" class="lnkGallery"> <img src="/slir/h270//files/x.jpeg" title="114121 - VASO" alt="VASO"> </a></div>
+      <div class="item-details"> <h5 class="item-name"> VASO VIDRIO X 2 UNIDADES CERVECERO EN CAJA </h5>
+      <span class="item-categories d-none d-md-block">Regaleria,Bazar,Vasos</span>
+      <span class="reference-container" title="C&oacute;digo"><span class="item-info-line-title">C&oacute;digo:</span> <span class="reference">114121</span></span>
+      <div class="item-description description">Set en caja de regalo.<br /> Material:Vidrio.</div>
+      <div class="item-price price " data-view-item-price="9900.0000"> <span class="origPrice text-nowrap"> $ 9.900 </span> </div></div></div>"""
+
+    def test_hipersarmiento(self):
+        prov = next(p for p in json.loads(Path(__file__).resolve().parent.parent.joinpath("proveedores.json").read_text(encoding="utf-8"))
+                    if p["id"] == "hipersarmiento")
+        colectar.get = falso_get({
+            "https://www.hipersarmiento.com.ar/": '<a href="/categoria/bazar">B</a><a href="/categoria/bazar%3Evasos">V</a>',
+            "https://www.hipersarmiento.com.ar/categoria/bazar": self.TARJETA,
+            "https://www.hipersarmiento.com.ar/categoria/bazar%3Evasos": self.TARJETA,
+        })
+        colectar.PAUSA = 0
+        try:
+            r = colectar.listado_html(prov, 100, SinRobots())
+        finally:
+            colectar.get = Colectores.get_original_global
+        self.assertEqual(len(r), 1)
+        self.assertEqual((r[0]["n"], r[0]["p"], r[0]["c"], r[0]["u"]),
+                         ("VASO VIDRIO X 2 UNIDADES CERVECERO EN CAJA", 9900, "Vasos", "https://www.hipersarmiento.com.ar/catalogo/3568467"))
+        self.assertEqual(r[0]["t"], "Código: 114121 · Set en caja de regalo. Material:Vidrio.")
+
+    def test_tarjeta_omega(self):
+        prov = {"id": "omega", "nombre": "Omega", "url": "https://mayoristaomega.com/#catalogo", "plataforma": "navegador"}
+        it = colectar.item_de_tarjeta(prov, {"nombre": "Kit de herramienta", "precio": "$ 5.900,00", "codigo": "Cod: CNW-22225",
+                                             "imagen": "data:image/svg+xml,x", "link": "https://mayoristaomega.com/#producto/1253"})
+        self.assertEqual((it["p"], it["i"], it["u"], it["t"]), (5900, "", "https://mayoristaomega.com/#producto/1253", "Código: CNW-22225"))
+
+    def test_crawl_delay(self):
+        colectar.get = lambda url, intentos=3: "User-agent: *\nCrawl-delay: 5\nDisallow: /*?*page=\n"
+        try:
+            r = colectar.Robots("https://x.com")
+        finally:
+            colectar.get = Colectores.get_original_global
+        self.assertEqual(r.demora, 5)
+        self.assertFalse(r.permite("https://x.com/categoria/bazar?page=2"))
+        self.assertTrue(r.permite("https://x.com/categoria/bazar"))
 
 
 class Listado(unittest.TestCase):
