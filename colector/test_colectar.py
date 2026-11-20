@@ -381,6 +381,26 @@ class ProductosRelacionados(unittest.TestCase):
         sin_cotizacion = pagina.replace('data-usd-ars-rate="1630"', '')
         self.assertIsNone(colectar.extraer_producto(sin_cotizacion, "https://x.com/products/A1", prov))
 
+    def test_ahmed_sin_datos_estructurados(self):
+        prov = next(p for p in json.loads(Path(__file__).resolve().parent.parent.joinpath("proveedores.json").read_text(encoding="utf-8"))
+                    if p["id"] == "ahmed")
+        pagina = ('<meta property="og:image" content="https://img/107.png" /><div class="product-info"> <div class="d-flex">'
+                  '<span style="font-weight:bold">#SKU:</span> <span>NFS116</span> </div> <div class="d-flex justify-content-between">'
+                  '<h1 class="title">control de play 2 (joystick de play 2) caja amarillo</h2> </div>'
+                  '<h3 class="price">$ 8.860 </h3> </div>')
+        it = colectar.extraer_producto(pagina, "https://ahmedelectronica.com/control-de-play-2", prov)
+        self.assertEqual((it["n"], it["p"], it["i"], it["t"]),
+                         ("control de play 2 (joystick de play 2) caja amarillo", 8860, "https://img/107.png", "Código: NFS116"))
+
+    def test_url_de_relleno_de_otra_web_no_descarta_el_producto(self):
+        # Como Kikiken: un solo Product, con offers.url "https://example.com/anvil".
+        pagina = ('<meta property="og:title" content="MT07672 PROYECTOR - KIKIKEN" />'
+                  '<script type="application/ld+json">{"@context":"https://schema.org/","@type":"Product","name":"MT07672 PROYECTOR",'
+                  '"offers":{"@type":"Offer","url":"https://example.com/anvil","priceCurrency":"ARS","price":"0"}}</script>')
+        prov = {"id": "x", "nombre": "X", "url": "https://kikiken.com", "plataforma": "a_medida"}
+        it = colectar.extraer_producto(pagina, "https://kikiken.com/store/16", prov)
+        self.assertEqual(it["n"], "MT07672 PROYECTOR")
+
 
 class Listado(unittest.TestCase):
     TARJETA = """<div class="shop_item"> <ul class="slides"><li><a href="/producto/{slug}"><img loading="lazy" src="/uploads/principales/{slug}.png"></a></li></ul>

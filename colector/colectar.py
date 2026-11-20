@@ -444,6 +444,7 @@ def _producto_de_la_pagina(nodos, texto, url):
     está: tomar el primero mezcla nombres y precios. Si no hay uno que sea claramente de esta página,
     devuelve None y se usan los metadatos de la propia página (OpenGraph / tiendanube:price)."""
     ruta = urlparse(url).path.rstrip("/")
+    host = urlparse(url).netloc.lower().removeprefix("www.")
 
     def rutas_declaradas(n):
         vals = [n.get("url"), n.get("@id"), n.get("mainEntityOfPage")]
@@ -454,7 +455,10 @@ def _producto_de_la_pagina(nodos, texto, url):
             if isinstance(v, dict):
                 v = v.get("@id") or v.get("url")
             if isinstance(v, str) and v.startswith(("http", "/")):
-                out.add(urlparse(v).path.rstrip("/"))
+                u = urlparse(v)
+                # Solo cuentan direcciones de esta misma web (algunas ponen "example.com" de relleno).
+                if not u.netloc or u.netloc.lower().removeprefix("www.") == host:
+                    out.add(u.path.rstrip("/"))
         return out
 
     candidatos = [n for n in nodos if {"Product", "ProductGroup"} & set(_tipo(n))]
@@ -504,6 +508,16 @@ def extraer_producto(texto, url, prov):
                 continue
 
     producto = _producto_de_la_pagina(nodos, texto, url)
+    if not producto and prov.get("pagina"):
+        # Webs sin datos estructurados: nombre y precio con expresiones sobre el HTML visible.
+        cfg = prov["pagina"]
+        m_nombre, m_precio = re.search(cfg["nombre"], texto), re.search(cfg["precio"], texto)
+        if m_nombre and m_precio:
+            m_cat = re.search(cfg["categoria"], texto) if cfg.get("categoria") else None
+            m_cod = re.search(cfg["codigo"], texto) if cfg.get("codigo") else None
+            return item(prov, limpiar_texto(m_nombre.group(1)), parse_precio(m_precio.group(1)), url,
+                        _meta(texto, "og:image"), limpiar_texto(m_cat.group(1)) if m_cat else None, True,
+                        f"Código: {limpiar_texto(m_cod.group(1))}" if m_cod else None)
     categoria = None
     migas = next((n for n in nodos if "BreadcrumbList" in _tipo(n)), None)
     if migas:
