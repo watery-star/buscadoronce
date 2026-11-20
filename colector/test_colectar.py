@@ -249,6 +249,34 @@ class Rastreo(unittest.TestCase):
             colectar.get = Colectores.get_original_global
         self.assertEqual(urls, ["https://deonce.com.ar/hogar/a/", "https://deonce.com.ar/hogar/b/"])
 
+    def test_deonce_desde_las_tarjetas(self):
+        prov = next(p for p in json.loads(Path(__file__).resolve().parent.parent.joinpath("proveedores.json").read_text(encoding="utf-8"))
+                    if p["id"] == "deonce")
+        tarjeta = ('<div class="ut2-gl__item " style="x"><form><div class="ut2-gl__image"> <a href="https://deonce.com.ar/hogar-y-blanco/bazar-y-cocina/vaso-{0}/">'
+                   '<img class="ty-pict" src="data:image/png;base64,AAA" data-src="https://deonce.com.ar/images/thumbnails/240/240/detailed/149/vaso.png" /></a></div>'
+                   '<div class="ut2-gl__name"> <a href="https://deonce.com.ar/hogar-y-blanco/bazar-y-cocina/vaso-{0}/" class="product-title" title="VASO {0}" >VASO {0} - COD: SBK-US928</a> </div>'
+                   '<span class="ty-qty-{1} ty-control-group__item" id="in_stock_info_85572"> {2} </span>'
+                   '<span class="ty-price" id="line_discounted_price_85572"> <bdi><span class="ty-price-num">$</span><span id="sec_discounted_price_85572" class="ty-price-num">4.907,76</span></bdi></span>'
+                   '<span class="ty-list-price">Precio sin impuesto: <bdi><span id="sec_product_price_85572" class="ty-list-price ty-nowrap">4.056,00</span></bdi></span>'
+                   '<div class="ut2-gl__bottom"> <div class="product-description" >Material: Vidrio.</div> </div></form>')
+        colectar.get = falso_get({
+            "https://deonce.com.ar/": '<a href="https://deonce.com.ar/hogar-y-blanco/">Hogar</a>',
+            "https://deonce.com.ar/hogar-y-blanco/": tarjeta.format("a", "in-stock", "En stock") + tarjeta.format("b", "out-of-stock", "Sin stock")
+                                                     + '<a href="https://deonce.com.ar/hogar-y-blanco/page-2/">2</a>',
+            "https://deonce.com.ar/hogar-y-blanco/page-2/": tarjeta.format("a", "in-stock", "En stock"),
+        })
+        colectar.PAUSA = 0
+        try:
+            r = colectar.COLECTORES[prov["plataforma"]](prov, 100, SinRobots())
+        finally:
+            colectar.get = Colectores.get_original_global
+        self.assertEqual(len(r), 2)
+        a = r[0]
+        self.assertEqual((a["n"], a["p"], a["i"], a["c"], a["d"], a["t"]),
+                         ("VASO a - COD: SBK-US928", 4907.76, "https://deonce.com.ar/images/detailed/149/vaso.png",
+                          "Bazar Y Cocina", 1, "Material: Vidrio."))
+        self.assertEqual(r[1]["d"], 0)
+
 
 class CategoriasSinPaginar(unittest.TestCase):
     TARJETA = """<div class="itemWrapper col"> <div class="item item-first" id="item_3568467"> <div class="item-image">

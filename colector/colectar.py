@@ -279,9 +279,10 @@ def woocommerce(prov, maximo, robots):
 # un sitemap.xml y, en cada producto, un bloque JSON-LD (schema.org/Product)
 # o metadatos OpenGraph con el precio.
 
-def urls_por_rastreo(prov, robots, maximo):
+def urls_por_rastreo(prov, robots, maximo, al_leer=None):
     """Para webs con sitemap viejo o sin sitemap: recorre las categorías y sus páginas
-    (según la expresión "seguir") y junta los enlaces de producto (expresión "producto")."""
+    (según la expresión "seguir") y junta los enlaces de producto (expresión "producto").
+    al_leer(url, texto) se llama con cada página de categoría leída."""
     cfg = prov["rastreo"]
     base = base_de(prov)
     re_seguir, re_prod = re.compile(cfg["seguir"]), re.compile(cfg["producto"])
@@ -297,6 +298,8 @@ def urls_por_rastreo(prov, robots, maximo):
             texto = get(url, intentos=2)
         except Exception:
             continue
+        if al_leer:
+            al_leer(url, texto)
         for m in re_prod.finditer(texto):
             enlace = urljoin(url, html.unescape(next(g for g in m.groups() if g)))
             # El mismo producto puede aparecer en varias categorías con otra ruta: se cuenta una vez.
@@ -312,6 +315,36 @@ def urls_por_rastreo(prov, robots, maximo):
         esperar(robots)
     print(f"    {len(vistas)} páginas de categorías recorridas", flush=True)
     return list(productos.values())[:maximo]
+
+
+def rastreo_tarjetas(prov, maximo, robots):
+    """Como el rastreo de categorías, pero toma nombre, precio, foto y stock directamente de las
+    tarjetas de cada listado, sin abrir cada producto (para catálogos de miles de productos)."""
+    cfg = prov["rastreo"]["tarjetas"]
+    base = base_de(prov)
+    por_clave = {}
+
+    def al_leer(url, texto):
+        for t in _tarjetas_listado(texto, cfg):
+            if not (t["link"] and t["nombre"]):
+                continue
+            enlace = urljoin(url, html.unescape(t["link"]))
+            clave = urlparse(enlace).path.rstrip("/").rsplit("/", 1)[-1]
+            if clave in por_clave:
+                continue
+            segmentos = [x for x in urlparse(enlace).path.strip("/").split("/") if x]
+            categoria = segmentos[-2].replace("-", " ").title() if len(segmentos) >= 2 else ""
+            imagen = urljoin(base + "/", html.unescape(t["imagen"])) if t["imagen"] else None
+            if imagen and cfg.get("imagen_grande"):
+                imagen = re.sub(cfg["imagen_grande"][0], cfg["imagen_grande"][1], imagen)
+            agotado = bool(re.search(r"(sin stock|agotad|out of stock)", t["stock"], re.I))
+            it = item(prov, t["nombre"], parse_precio(t["precio"]), enlace, imagen, categoria,
+                      not agotado, t["descripcion"])
+            if it:
+                por_clave[clave] = it
+
+    urls_por_rastreo(prov, robots, maximo, al_leer)
+    return list(por_clave.values())[:maximo]
 
 
 def urls_de_productos(prov, robots, maximo):
@@ -695,7 +728,7 @@ def clave_php(prov, maximo, robots):
 JS_TARJETAS = """(tarjetas, sel) => tarjetas.map(c => {
   const q = s => s ? (c.querySelector(s)?.innerText || '').trim() : '';
   const img = sel.imagen ? c.querySelector(sel.imagen) : null;
-  const a = c.querySelector('a[href]');
+  const a = [...c.querySelectorAll('a[href]')].find(x => /^https?:/.test(x.href));
   return {nombre: q(sel.nombre), precio: q(sel.precio), categoria: q(sel.categoria),
           codigo: q(sel.codigo), extra: q(sel.extra), imagen: img ? img.src : '', link: a ? a.href : ''};
 })"""
@@ -755,7 +788,7 @@ def _tarjetas_listado(texto, cfg):
     out = []
     for parte in partes:
         datos = {}
-        for campo in ("link", "imagen", "nombre", "categoria", "precio", "codigo", "descripcion"):
+        for campo in ("link", "imagen", "nombre", "categoria", "precio", "codigo", "descripcion", "stock"):
             m = re.search(cfg[campo], parte) if cfg.get(campo) else None
             datos[campo] = limpiar_texto(m.group(1)) if m else ""
         out.append(datos)
@@ -822,6 +855,7 @@ COLECTORES = {
     "tiendanube": sitemap_jsonld,
     "jumpseller": sitemap_jsonld,
     "a_medida": sitemap_jsonld,
+    "rastreo_tarjetas": rastreo_tarjetas,
     "clave_php": clave_php,
     "navegador": navegador,
 }
