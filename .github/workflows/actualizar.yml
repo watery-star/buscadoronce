@@ -31,6 +31,8 @@ jobs:
         run: |
           if git fetch -q --depth=1 origin datos; then
             git show FETCH_HEAD:productos.json > docs/productos.json
+            # Fotos sacadas de catálogos PDF (se regeneran cuando ese proveedor se vuelve a leer)
+            git archive FETCH_HEAD img 2>/dev/null | tar -x -C docs 2>/dev/null || true
             echo "Datos anteriores tomados de la rama datos"
           else
             echo "Todavía no hay rama datos: se usa docs/productos.json del repositorio"
@@ -45,13 +47,14 @@ jobs:
 
       - name: Instalar navegador automático (para webs que cargan con JavaScript)
         run: |
-          pip install playwright
+          pip install playwright pdfplumber
           python -m playwright install --with-deps chromium
 
       - name: Traer productos de los proveedores
         env:
           CLAVE_LAXSHI: ${{ secrets.CLAVE_LAXSHI }}
           CLAVE_OESTECH: ${{ secrets.CLAVE_OESTECH }}
+          CLAVE_LAMBOTECH: ${{ secrets.CLAVE_LAMBOTECH }}
         run: |
           if [ -n "${{ github.event.inputs.solo }}" ]; then
             python colector/colectar.py --solo "${{ github.event.inputs.solo }}"
