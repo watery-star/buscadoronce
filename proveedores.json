@@ -45,6 +45,7 @@
   {"id": "elgalpon", "nombre": "El Galpón de Once", "url": "https://elgalpondeonce.com.ar", "plataforma": "a_medida", "activo": true,
    "pagina": {"nombre": "<h1 class=\"title\">([^<]+)<", "precio": "<h3 class=\"price\">([^<]+)<",
               "codigo": "#SKU:</span>\\s*<span>([^<]+)<"}},
+  {"id": "levys", "nombre": "Levys Bazar", "url": "https://levysbazar.com", "plataforma": "a_medida", "activo": true, "patron": "/publicaciones/\\d+/", "hilos": 6},
   {"id": "maju", "nombre": "Mayorista Maju", "url": "https://mayoristamaju.com", "plataforma": "a_medida", "activo": false,
    "nota": "Web propia con catálogo paginado por JavaScript: falta armarle un colector."},
   {"id": "lambotech", "nombre": "Lambo Tech", "url": "https://drive.google.com/drive/folders/1vRh7MP5ng5YymTJF-XTD6nva1mP5Uuqs", "plataforma": "drive_pdf", "activo": true,
