@@ -39,6 +39,10 @@
   .provs label span { flex: 1; }
   .provs label em { font-style: normal; color: var(--muted); font-size: 12px; }
   .provs input { accent-color: var(--accent); }
+  .panel h3 .acciones { display: flex; gap: 10px; }
+  .buscaprov { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 14px; background: var(--card); color: var(--ink); }
+  .provs { max-height: 420px; overflow-y: auto; }
+  .provs label[hidden] { display: none; }
   .range { display: flex; gap: 6px; align-items: center; }
   .range input { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
   .check { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 3px 0; cursor: pointer; }
@@ -124,7 +128,8 @@
 <main class="wrap">
   <aside id="filtros">
     <div class="panel">
-      <h3>Proveedores <button type="button" id="todos">Todos</button></h3>
+      <h3>Proveedores <span class="acciones"><button type="button" id="todos">Todos</button><button type="button" id="ninguno">Ninguno</button></span></h3>
+      <input id="buscaprov" class="buscaprov" type="search" placeholder="Buscar proveedor…" autocomplete="off">
       <div class="provs" id="provs"></div>
     </div>
     <div class="panel">
@@ -175,7 +180,7 @@ const norm = s => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pesos = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
-let DATA = { proveedores: [], productos: [] }, PROVS = {}, elegidos = new Set(), resultados = [], mostrados = 0, terminos = [];
+let DATA = { proveedores: [], productos: [] }, PROVS = {}, elegidos = null, resultados = [], mostrados = 0, terminos = [];
 
 function hace(iso) {
   if (!iso) return "nunca";
@@ -216,16 +221,24 @@ function pintarProveedores() {
   for (const it of DATA.productos) cuenta[it.s] = (cuenta[it.s] || 0) + 1;
   const lista = DATA.proveedores.filter(p => cuenta[p.id]).sort((a, b) => a.nombre.localeCompare(b.nombre));
   $("provs").innerHTML = lista.length ? lista.map(p => `
-    <label><input type="checkbox" value="${esc(p.id)}" ${!elegidos.size || elegidos.has(p.id) ? "checked" : ""}>
+    <label data-nombre="${esc(norm(p.nombre))}"><input type="checkbox" value="${esc(p.id)}" ${!elegidos || elegidos.has(p.id) ? "checked" : ""}>
     <span>${esc(p.nombre)}</span><em>${cuenta[p.id].toLocaleString("es-AR")}</em></label>`).join("")
     : `<small style="color:var(--muted)">Todavía no hay proveedores con productos.</small>`;
   $("provs").onchange = () => {
     const marcados = [...$("provs").querySelectorAll("input:checked")].map(i => i.value);
-    elegidos = marcados.length === lista.length ? new Set() : new Set(marcados);
+    elegidos = marcados.length === lista.length ? null : new Set(marcados);
     buscar();
   };
-  $("todos").onclick = () => { elegidos = new Set(); pintarProveedores(); buscar(); };
+  filtrarProveedores();
+  $("todos").onclick = () => { elegidos = null; pintarProveedores(); buscar(); };
+  $("ninguno").onclick = () => { elegidos = new Set(); pintarProveedores(); buscar(); };
 }
+
+function filtrarProveedores() {
+  const q = norm($("buscaprov").value).trim();
+  for (const l of $("provs").querySelectorAll("label")) l.hidden = q && !l.dataset.nombre.includes(q);
+}
+$("buscaprov").addEventListener("input", filtrarProveedores);
 
 function buscar() {
   const q = norm($("q").value).trim();
@@ -235,7 +248,7 @@ function buscar() {
 
   resultados = [];
   for (const it of DATA.productos) {
-    if (elegidos.size && !elegidos.has(it.s)) continue;
+    if (elegidos && !elegidos.has(it.s)) continue;
     if (stock && !it.d) continue;
     if (conPrecio && !it.p) continue;
     if (it.p && (it.p < min || it.p > max)) continue;
@@ -331,6 +344,8 @@ function mas() {
   if (!DATA.productos.length) {
     vacio = `<div class="empty"><b>Todavía no hay productos cargados</b>
       La primera actualización todavía no corrió. En GitHub, andá a la pestaña <i>Actions</i> → <i>Actualizar productos</i> → <i>Run workflow</i>.</div>`;
+  } else if (elegidos && !elegidos.size) {
+    vacio = `<div class="empty"><b>No hay proveedores elegidos</b>Tildá a la izquierda los proveedores en los que querés buscar.</div>`;
   } else if (!resultados.length) {
     vacio = `<div class="empty"><b>No encontramos nada con esos filtros</b>Probá con otra palabra, o sacá el filtro de precio o de stock.</div>`;
   }
@@ -351,7 +366,7 @@ function pintarTabla() {
 function guardarURL() {
   const u = new URLSearchParams();
   if ($("q").value) u.set("q", $("q").value);
-  if (elegidos.size) u.set("prov", [...elegidos].join(","));
+  if (elegidos) u.set("prov", [...elegidos].join(",") || "ninguno");
   if ($("min").value) u.set("min", $("min").value);
   if ($("max").value) u.set("max", $("max").value);
   if ($("orden").value !== "rel") u.set("orden", $("orden").value);
@@ -360,7 +375,8 @@ function guardarURL() {
 function leerURL() {
   const u = new URLSearchParams(location.search);
   $("q").value = u.get("q") || "";
-  elegidos = new Set((u.get("prov") || "").split(",").filter(Boolean));
+  const prov = u.get("prov");
+  elegidos = prov ? new Set(prov.split(",").filter(x => x && x !== "ninguno")) : null;
   $("min").value = u.get("min") || "";
   $("max").value = u.get("max") || "";
   if (u.get("orden")) $("orden").value = u.get("orden");
