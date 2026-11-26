@@ -3,6 +3,7 @@
 Correr con:  python -m unittest colector/test_colectar.py
 """
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -427,6 +428,33 @@ class Listado(unittest.TestCase):
 
 
 Colectores.get_original_global = colectar.get
+
+class CatalogoPDF(unittest.TestCase):
+    FILAS = [["FOTO", "CODIGO", "品名", "DESCRIPCION", "UNIDAD/B", "PRECI O/ U"],
+             ["", "D-17151", "小白球灯串", "Luz led de bolitas blancas,\nluz cálida (4m)", "200", "1. 25"],
+             ["", None, None, None, None, None],
+             ["", "C-M9006/C-M9006-80", "柔性单色", "TIRA LED NEON 1M", "120/80", "2.30"],
+             ["", "X-1", "无价", "SIN PRECIO", "10", ""]]
+
+    def test_filas(self):
+        r = colectar.filas_de_catalogo(self.FILAS)
+        self.assertEqual(r, [(1, "D-17151", "Luz led de bolitas blancas, luz cálida (4m)", "200", 1.25),
+                             (3, "C-M9006/C-M9006-80", "TIRA LED NEON 1M", "120/80", 2.3)])
+
+    def test_item_en_pesos(self):
+        prov = {"id": "lambotech", "nombre": "Lambo Tech"}
+        fila = {"codigo": "D-17151", "descripcion": "Luz led de bolitas", "unidades": "200", "usd": 1.25, "imagen": "D-17151.jpg"}
+        it = colectar.item_de_catalogo(prov, fila, "Luz Navidad 24.11.pdf", "ABC", 1450.0, "img/lambotech/D-17151.jpg")
+        self.assertEqual((it["n"], it["p"], it["c"], it["u"]),
+                         ("Luz led de bolitas (D-17151)", 1812.5, "Luz Navidad", "https://drive.google.com/file/d/ABC/view#D-17151"))
+        self.assertEqual(it["t"], "Código: D-17151 · Venta por bulto cerrado de 200 unidades · "
+                                  "US$ 1,25 por unidad (dólar oficial $1.450) · Catálogo: Luz Navidad 24.11")
+
+    def test_sin_clave_avisa(self):
+        os.environ.pop("CLAVE_LAMBOTECH", None)
+        with self.assertRaises(RuntimeError):
+            colectar.drive_pdf({"id": "lambotech", "carpeta": "x"}, 10, SinRobots())
+
 
 if __name__ == "__main__":
     unittest.main()

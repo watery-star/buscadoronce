@@ -862,6 +862,150 @@ def listado_html(prov, maximo, robots):
     return out[:maximo]
 
 
+# ---------------------------------------------------------------- catálogos PDF en Google Drive
+# Para proveedores que publican sus listas como PDF en una carpeta de Drive compartida por link.
+# Se usa la API oficial de Drive con una clave (variable de entorno CLAVE_<ID>). Los precios vienen
+# en dólares por unidad y se venden por bulto cerrado: se pasan a pesos con el dólar oficial del día.
+
+def _numero(texto):
+    """'2. 25' -> 2.25 ; '1,50' -> 1.5 ; sin número -> None."""
+    t = re.sub(r"\s+", "", texto or "").replace(",", ".")
+    m = re.search(r"\d+(?:\.\d+)?", t)
+    return float(m.group(0)) if m else None
+
+
+def filas_de_catalogo(filas):
+    """Filas de la tabla [foto, código, nombre en chino, descripción, unidades por bulto, precio USD]
+    -> lista de (indice_de_fila, codigo, descripcion, unidades, usd). Saltea encabezados y filas vacías."""
+    out = []
+    for i, f in enumerate(filas):
+        f = [(c or "").strip() for c in f]
+        if len(f) < 6:
+            continue
+        codigo, descripcion, unidades = limpiar_texto(f[1]), limpiar_texto(f[3]), limpiar_texto(f[4])
+        if not codigo or re.match(r"(?i)c[oó]digo", codigo):
+            continue
+        usd = _numero(f[5])
+        if not usd or not (descripcion or f[2]):
+            continue
+        out.append((i, codigo, descripcion or limpiar_texto(f[2]), unidades, usd))
+    return out
+
+
+def _nombre_de_catalogo(archivo):
+    """'Luz Navidad 24.11.pdf' -> 'Luz Navidad'."""
+    n = re.sub(r"(?i)\.pdf$", "", archivo).strip()
+    return re.sub(r"\s+\d{1,2}\.\d{1,2}$", "", n).strip() or n
+
+
+def productos_de_pdf(ruta, dir_img=None):
+    """Lee un catálogo PDF. Devuelve dicts {codigo, descripcion, unidades, usd, imagen}; si se pasa
+    dir_img, guarda ahí la foto de cada fila (recortada de la página) y pone su nombre en 'imagen'."""
+    import pdfplumber
+    out = []
+    with pdfplumber.open(ruta) as pdf:
+        for pagina in pdf.pages:
+            render = None
+            for tabla in pagina.find_tables():
+                filas = tabla.extract()
+                for i, codigo, descripcion, unidades, usd in filas_de_catalogo(filas):
+                    imagen = ""
+                    if dir_img is not None:
+                        try:
+                            _, arriba, _, abajo = tabla.rows[i].bbox
+                            fotos = [im for im in pagina.images
+                                     if arriba - 2 <= (im["top"] + im["bottom"]) / 2 <= abajo + 2
+                                     and im["width"] > 15 and im["height"] > 15]
+                            if fotos:
+                                if render is None:
+                                    render = pagina.to_image(resolution=260).original
+                                esc_x, esc_y = render.width / pagina.width, render.height / pagina.height
+                                x0, y0 = min(f["x0"] for f in fotos), min(f["top"] for f in fotos)
+                                x1, y1 = max(f["x1"] for f in fotos), max(f["bottom"] for f in fotos)
+                                caja = (max(0, int(x0 * esc_x)), max(0, int(y0 * esc_y)),
+                                        min(render.width, int(x1 * esc_x)), min(render.height, int(y1 * esc_y)))
+                                if caja[2] - caja[0] > 20 and caja[3] - caja[1] > 20:
+                                    recorte = render.crop(caja).convert("RGB")
+                                    recorte.thumbnail((420, 420))
+                                    imagen = re.sub(r"[^A-Za-z0-9]+", "-", codigo).strip("-")[:60] + ".jpg"
+                                    recorte.save(Path(dir_img) / imagen, "JPEG", quality=72, optimize=True)
+                        except Exception:
+                            imagen = ""
+                    out.append({"codigo": codigo, "descripcion": descripcion, "unidades": unidades,
+                                "usd": usd, "imagen": imagen})
+    return out
+
+
+def dolar_oficial():
+    datos = json.loads(get("https://dolarapi.com/v1/dolares/oficial"))
+    venta = float(datos["venta"])
+    if not 100 < venta < 100000:
+        raise RuntimeError(f"cotización del dólar fuera de rango: {venta}")
+    return venta
+
+
+def _miles(n, decimales=0):
+    return f"{n:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def item_de_catalogo(prov, fila, archivo, id_archivo, cotizacion, url_img=""):
+    unidades = fila["unidades"]
+    partes = [f"Código: {fila['codigo']}"]
+    if unidades:
+        partes.append(f"Venta por bulto cerrado de {unidades} unidades")
+    partes.append(f"US$ {_miles(fila['usd'], 2)} por unidad (dólar oficial ${_miles(cotizacion)})")
+    partes.append(f"Catálogo: {re.sub(r'(?i)[.]pdf$', '', archivo)}")
+    return item(prov, f"{fila['descripcion']} ({fila['codigo']})", fila["usd"] * cotizacion,
+                f"https://drive.google.com/file/d/{id_archivo}/view#{re.sub(r'[^A-Za-z0-9]+', '-', fila['codigo'])}",
+                url_img, _nombre_de_catalogo(archivo), True, " · ".join(partes))
+
+
+def drive_pdf(prov, maximo, robots):
+    import shutil
+    import tempfile
+    variable = "CLAVE_" + prov["id"].upper()
+    clave = os.environ.get(variable)
+    if not clave:
+        raise RuntimeError(f"falta la clave de la API de Drive ({variable}) en Settings → Secrets")
+    carpeta = prov["carpeta"]
+    api = "https://www.googleapis.com/drive/v3/files"
+    consulta = urlencode({"q": f"'{carpeta}' in parents and trashed = false and mimeType = 'application/pdf'",
+                          "fields": "files(id,name,modifiedTime)", "orderBy": "modifiedTime", "pageSize": 200, "key": clave})
+    try:
+        archivos = json.loads(get(f"{api}?{consulta}")).get("files", [])
+    except HTTPError as e:
+        raise RuntimeError(f"la API de Drive rechazó el pedido ({e.code}): revisar la clave y que la carpeta siga compartida por link")
+    if not archivos:
+        raise RuntimeError("la carpeta de Drive no tiene catálogos PDF (¿sigue compartida por link?)")
+    cotizacion = dolar_oficial()
+    print(f"    {len(archivos)} catálogos PDF · dólar oficial ${cotizacion:,.0f}", flush=True)
+
+    destino = RAIZ / "docs" / "img" / prov["id"]
+    tmp_img = Path(tempfile.mkdtemp())
+    por_codigo = {}
+    for a in archivos:  # del más viejo al más nuevo: si un código se repite, vale el catálogo más reciente
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
+            try:
+                with urlopen(Request(f"{api}/{a['id']}?alt=media&key={clave}", headers={"User-Agent": UA}), timeout=300) as r:
+                    shutil.copyfileobj(r, f)
+                f.flush()
+                filas = productos_de_pdf(f.name, tmp_img)
+            except Exception as e:
+                print(f"    {a['name']}: no se pudo leer ({type(e).__name__})", flush=True)
+                continue
+        print(f"    {a['name']}: {len(filas)} productos", flush=True)
+        for fila in filas:
+            url_img = f"img/{prov['id']}/{fila['imagen']}?v={a['modifiedTime'][:10]}" if fila["imagen"] else ""
+            it = item_de_catalogo(prov, fila, a["name"], a["id"], cotizacion, url_img)
+            if it:
+                por_codigo[fila["codigo"]] = it
+    if por_codigo:  # recién ahora se reemplazan las fotos publicadas
+        shutil.rmtree(destino, ignore_errors=True)
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp_img), str(destino))
+    return list(por_codigo.values())[:maximo]
+
+
 COLECTORES = {
     "listado_html": listado_html,
     "shopify": shopify,
@@ -872,6 +1016,7 @@ COLECTORES = {
     "rastreo_tarjetas": rastreo_tarjetas,
     "clave_php": clave_php,
     "navegador": navegador,
+    "drive_pdf": drive_pdf,
 }
 
 
