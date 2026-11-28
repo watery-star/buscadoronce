@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buscador Once · Proveedores mayoristas</title>
+<meta name="description" content="Buscá productos y precios en todos los proveedores mayoristas de Once en un solo lugar.">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e8590c'/><text x='16' y='22' font-size='16' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'>11</text></svg>">
+<style>
+  :root {
+    --bg: #f6f4f0; --card: #fff; --ink: #1d1b18; --muted: #6f6a62; --line: #e4dfd6;
+    --accent: #e8590c; --accent-ink: #fff; --accent-soft: #fdecdf; --ok: #2f8f46; --err: #c0392b;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  button, input, select { font: inherit; color: inherit; }
+  a { color: inherit; }
+
+  header { background: var(--ink); color: #fff; padding: 18px 20px 22px; }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  .brand { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .brand b { font-size: 20px; letter-spacing: -.01em; }
+  .brand b span { color: var(--accent); }
+  .brand small { color: #b7b0a5; }
+  .search { display: flex; gap: 8px; }
+  .search input { flex: 1; min-width: 0; padding: 14px 16px; border-radius: var(--radius); border: 0; font-size: 17px; background: #fff; color: var(--ink); outline: 3px solid transparent; }
+  .search input:focus { outline-color: var(--accent); }
+  .status { margin-top: 10px; font-size: 13px; color: #b7b0a5; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .status button { background: none; border: 0; color: #fff; text-decoration: underline; cursor: pointer; padding: 0; font-size: 13px; }
+
+  main { display: grid; grid-template-columns: 250px 1fr; gap: 24px; padding: 20px; }
+  aside { position: sticky; top: 16px; align-self: start; max-height: calc(100vh - 32px); overflow: auto; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
+  .panel h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); display: flex; justify-content: space-between; }
+  .panel h3 button { border: 0; background: none; color: var(--accent); cursor: pointer; text-transform: none; letter-spacing: 0; font-size: 13px; }
+  .provs label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; font-size: 14px; }
+  .provs label span { flex: 1; }
+  .provs label em { font-style: normal; color: var(--muted); font-size: 12px; }
+  .provs input { accent-color: var(--accent); }
+  .panel h3 .acciones { display: flex; gap: 10px; }
+  .buscaprov { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 14px; background: var(--card); color: var(--ink); }
+  .provs { max-height: 420px; overflow-y: auto; }
+  .provs label[hidden] { display: none; }
+  .range { display: flex; gap: 6px; align-items: center; }
+  .range input { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+  .check { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 3px 0; cursor: pointer; }
+  .check input { accent-color: var(--accent); }
+
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .bar .count { color: var(--muted); }
+  .bar .count b { color: var(--ink); }
+  .bar select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  .filters-btn { display: none; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; text-decoration: none; transition: transform .12s, box-shadow .12s; }
+  button.card { padding: 0; text-align: left; cursor: pointer; width: 100%; font: inherit; color: inherit; }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+  .card .img { aspect-ratio: 1; background: #f1eee8; display: grid; place-items: center; overflow: hidden; }
+  .card .img img { width: 100%; height: 100%; object-fit: contain; }
+  .card .img .ph { color: #c8c1b5; font-size: 28px; }
+  .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .card .name { font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .desc { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .price { font-size: 18px; font-weight: 700; margin-top: auto; }
+  .card .price.none { font-size: 13px; font-weight: 500; color: var(--muted); }
+  .card .meta { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
+  .tag { background: var(--accent-soft); color: #9a3a06; padding: 2px 7px; border-radius: 99px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .out { color: var(--err); font-weight: 600; }
+  mark { background: #ffe8a3; color: inherit; border-radius: 2px; }
+
+  .more { display: block; margin: 22px auto; padding: 12px 22px; border-radius: 99px; border: 0; background: var(--accent); color: var(--accent-ink); font-weight: 600; cursor: pointer; }
+  .empty { text-align: center; padding: 60px 20px; color: var(--muted); background: var(--card); border: 1px dashed var(--line); border-radius: var(--radius); }
+  .empty b { color: var(--ink); display: block; font-size: 17px; margin-bottom: 6px; }
+
+  dialog { border: 0; border-radius: var(--radius); padding: 0; max-width: 680px; width: calc(100% - 24px); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  .dlg-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .dlg-head button { border: 0; background: none; font-size: 22px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { padding: 8px 18px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  td small { color: var(--muted); display: block; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: #bbb; }
+  .dot.ok { background: var(--ok); } .dot.error { background: var(--err); }
+
+  #det { max-width: 820px; }
+  .det { display: grid; grid-template-columns: 1fr 1fr; }
+  .det .img { background: #f1eee8; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; }
+  .det .img img { width: 100%; height: 100%; object-fit: contain; }
+  .det .img .ph { color: #c8c1b5; font-size: 40px; }
+  .det .info { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .det h2 { margin: 0; font-size: 19px; line-height: 1.3; }
+  .det .precio { font-size: 26px; font-weight: 700; }
+  .det .precio.none { font-size: 15px; font-weight: 500; color: var(--muted); }
+  .det p { margin: 0; color: #3b3833; font-size: 14px; }
+  .det dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 14px; }
+  .det dt { color: var(--muted); }
+  .det dd { margin: 0; }
+  .det .ir { margin-top: auto; display: block; text-align: center; padding: 12px; border-radius: 99px; background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+
+  @media (max-width: 800px) {
+    main { grid-template-columns: 1fr; padding: 14px; }
+    aside { display: none; position: static; max-height: none; }
+    aside.open { display: block; }
+    .filters-btn { display: inline-block; }
+    .brand small { display: none; }
+    .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .card .price { font-size: 16px; }
+    .det { grid-template-columns: 1fr; }
+    .det .img { aspect-ratio: 4 / 3; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand"><b>Buscador <span>Once</span></b><small>proveedores mayoristas en un solo lugar</small></div>
+    <form class="search" onsubmit="event.preventDefault()">
+      <input id="q" type="search" placeholder="Buscá un producto: termo, cargador tipo c, parlante…" autocomplete="off" autofocus>
+    </form>
+    <div class="status" id="status">Cargando productos…</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <aside id="filtros">
+    <div class="panel">
+      <h3>Proveedores <span class="acciones"><button type="button" id="todos">Todos</button><button type="button" id="ninguno">Ninguno</button></span></h3>
+      <input id="buscaprov" class="buscaprov" type="search" placeholder="Buscar proveedor…" autocomplete="off">
+      <div class="provs" id="provs"></div>
+    </div>
+    <div class="panel">
+      <h3>Precio</h3>
+      <div class="range">
+        <input id="min" type="number" inputmode="numeric" placeholder="Mín" min="0">
+        <span>–</span>
+        <input id="max" type="number" inputmode="numeric" placeholder="Máx" min="0">
+      </div>
+    </div>
+    <div class="panel">
+      <label class="check"><input type="checkbox" id="stock" checked> Solo con stock</label>
+      <label class="check"><input type="checkbox" id="conprecio" checked> Solo con precio</label>
+    </div>
+  </aside>
+
+  <section>
+    <div class="bar">
+      <button class="filters-btn" id="toggle" type="button">Filtros</button>
+      <div class="count" id="count"></div>
+      <select id="orden" aria-label="Ordenar">
+        <option value="rel">Más relevantes</option>
+        <option value="asc">Menor precio</option>
+        <option value="desc">Mayor precio</option>
+        <option value="az">Nombre A–Z</option>
+      </select>
+    </div>
+    <div class="grid" id="grid"></div>
+    <button class="more" id="more" hidden>Ver más productos</button>
+    <div id="vacio"></div>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <div class="dlg-head"><b>Estado de los proveedores</b><button type="button" onclick="dlg.close()" aria-label="Cerrar">×</button></div>
+  <table><thead><tr><th>Proveedor</th><th>Productos</th><th>Última actualización</th></tr></thead><tbody id="tabla"></tbody></table>
+</dialog>
+
+<dialog id="det">
+  <div class="dlg-head"><b id="detProv"></b><button type="button" onclick="det.close()" aria-label="Cerrar">×</button></div>
+  <div class="det" id="detBody"></div>
+</dialog>
+
+<script>
+const POR_PAGINA = 48;
+const $ = id => document.getElementById(id);
+const norm = s => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pesos = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
+
+let DATA = { proveedores: [], productos: [] }, PROVS = {}, elegidos = null, resultados = [], mostrados = 0, terminos = [];
+
+function hace(iso) {
+  if (!iso) return "nunca";
+  const min = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (min < 60) return `hace ${Math.max(min, 1)} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `hace ${h} h`;
+  return `hace ${Math.round(h / 24)} días`;
+}
+
+async function cargar() {
+  try {
+    const r = await fetch("productos.json", { cache: "no-cache" });
+    DATA = await r.json();
+  } catch (e) {
+    $("status").textContent = "No se pudo cargar productos.json.";
+    return;
+  }
+  for (const p of DATA.proveedores) PROVS[p.id] = p;
+  for (const it of DATA.productos) {
+    it._n = norm(it.n);
+    it._h = it._n + " " + norm(it.c) + " " + norm(PROVS[it.s]?.nombre);
+  }
+  const ok = DATA.proveedores.filter(p => p.estado === "ok").length;
+  const activos = DATA.proveedores.filter(p => p.estado !== "inactivo").length;
+  $("status").innerHTML = `<span><b style="color:#fff">${DATA.productos.length.toLocaleString("es-AR")}</b> productos</span>·
+    <span>${ok} de ${activos} proveedores actualizados</span>·<span>${hace(DATA.generado)}</span>·
+    <button type="button" id="verEstado">ver estado</button>`;
+  $("verEstado").onclick = () => { pintarTabla(); $("dlg").showModal(); };
+
+  leerURL();
+  pintarProveedores();
+  buscar();
+}
+
+function pintarProveedores() {
+  const cuenta = {};
+  for (const it of DATA.productos) cuenta[it.s] = (cuenta[it.s] || 0) + 1;
+  const lista = DATA.proveedores.filter(p => cuenta[p.id]).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  $("provs").innerHTML = lista.length ? lista.map(p => `
+    <label data-nombre="${esc(norm(p.nombre))}"><input type="checkbox" value="${esc(p.id)}" ${!elegidos || elegidos.has(p.id) ? "checked" : ""}>
+    <span>${esc(p.nombre)}</span><em>${cuenta[p.id].toLocaleString("es-AR")}</em></label>`).join("")
+    : `<small style="color:var(--muted)">Todavía no hay proveedores con productos.</small>`;
+  $("provs").onchange = () => {
+    const marcados = [...$("provs").querySelectorAll("input:checked")].map(i => i.value);
+    elegidos = marcados.length === lista.length ? null : new Set(marcados);
+    buscar();
+  };
+  filtrarProveedores();
+  $("todos").onclick = () => { elegidos = null; pintarProveedores(); buscar(); };
+  $("ninguno").onclick = () => { elegidos = new Set(); pintarProveedores(); buscar(); };
+}
+
+function filtrarProveedores() {
+  const q = norm($("buscaprov").value).trim();
+  for (const l of $("provs").querySelectorAll("label")) l.hidden = q && !l.dataset.nombre.includes(q);
+}
+$("buscaprov").addEventListener("input", filtrarProveedores);
+
+function buscar() {
+  const q = norm($("q").value).trim();
+  terminos = q.split(/\s+/).filter(Boolean);
+  const min = parseFloat($("min").value) || 0, max = parseFloat($("max").value) || Infinity;
+  const stock = $("stock").checked, conPrecio = $("conprecio").checked, orden = $("orden").value;
+
+  resultados = [];
+  for (const it of DATA.productos) {
+    if (elegidos && !elegidos.has(it.s)) continue;
+    if (stock && !it.d) continue;
+    if (conPrecio && !it.p) continue;
+    if (it.p && (it.p < min || it.p > max)) continue;
+    if (!it.p && (min > 0 || max < Infinity)) continue;
+    let puntos = 0, ok = true;
+    for (const t of terminos) {
+      if (!it._h.includes(t)) { ok = false; break; }
+      if (it._n.includes(t)) puntos += 2;
+      if (it._n.startsWith(t)) puntos += 1;
+      if (new RegExp("\\b" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(it._n)) puntos += 1;
+    }
+    if (!ok) continue;
+    it._r = puntos;
+    resultados.push(it);
+  }
+  const precio = x => x.p ?? Infinity;
+  if (orden === "asc") resultados.sort((a, b) => precio(a) - precio(b));
+  else if (orden === "desc") resultados.sort((a, b) => (b.p ?? -1) - (a.p ?? -1));
+  else if (orden === "az") resultados.sort((a, b) => a.n.localeCompare(b.n, "es"));
+  else if (terminos.length) resultados.sort((a, b) => b._r - a._r || precio(a) - precio(b));
+
+  mostrados = 0;
+  $("grid").innerHTML = "";
+  mas();
+  guardarURL();
+}
+
+function resaltar(texto) {
+  let out = esc(texto);
+  if (!terminos.length) return out;
+  const n = norm(out);
+  const marcas = [];
+  for (const t of terminos) {
+    let i = n.indexOf(t);
+    while (i !== -1) { marcas.push([i, i + t.length]); i = n.indexOf(t, i + t.length); }
+  }
+  if (!marcas.length) return out;
+  marcas.sort((a, b) => a[0] - b[0]);
+  let res = "", pos = 0;
+  for (const [a, b] of marcas) {
+    if (a < pos) continue;
+    // no cortar entidades HTML
+    if (/&[a-z#0-9]*$/i.test(out.slice(pos, a))) continue;
+    res += out.slice(pos, a) + "<mark>" + out.slice(a, b) + "</mark>";
+    pos = b;
+  }
+  return res + out.slice(pos);
+}
+
+function tarjeta(it, k) {
+  const prov = PROVS[it.s]?.nombre || it.s;
+  const img = it.i ? `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(it.i)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ph',textContent:'▢'}))">`
+                   : `<span class="ph">▢</span>`;
+  return `<button type="button" class="card" data-k="${k}">
+    <div class="img">${img}</div>
+    <div class="body">
+      <div class="name">${resaltar(it.n)}</div>
+      ${it.t ? `<div class="desc">${esc(it.t)}</div>` : ""}
+      <div class="price ${it.p ? "" : "none"}">${it.p ? pesos.format(it.p) : "Consultar precio"}</div>
+      <div class="meta"><span class="tag">${esc(prov)}</span>${it.d ? "" : '<span class="out">Sin stock</span>'}</div>
+    </div></button>`;
+}
+
+function abrir(it) {
+  const prov = PROVS[it.s] || { nombre: it.s, url: "" };
+  $("detProv").textContent = prov.nombre;
+  const img = it.i ? `<img referrerpolicy="no-referrer" src="${esc(it.i)}" alt="">` : `<span class="ph">▢</span>`;
+  $("detBody").innerHTML = `<div class="img">${img}</div>
+    <div class="info">
+      <h2>${esc(it.n)}</h2>
+      <div class="precio ${it.p ? "" : "none"}">${it.p ? pesos.format(it.p) : "Precio a consultar con el proveedor"}</div>
+      ${it.t ? `<p>${esc(it.t)}</p>` : ""}
+      <dl>
+        <dt>Proveedor</dt><dd>${esc(prov.nombre)}</dd>
+        ${it.c ? `<dt>Categoría</dt><dd>${esc(it.c)}</dd>` : ""}
+        <dt>Stock</dt><dd>${it.d ? "Disponible" : '<span class="out">Sin stock</span>'}</dd>
+        ${prov.nota ? `<dt>Nota</dt><dd>${esc(prov.nota)}</dd>` : ""}
+        <dt>Actualizado</dt><dd>${hace(prov.actualizado)}</dd>
+      </dl>
+      <a class="ir" href="${esc(it.u)}" target="_blank" rel="noopener">Ver en la web de ${esc(prov.nombre)} ↗</a>
+    </div>`;
+  $("det").showModal();
+}
+
+function mas() {
+  const lote = resultados.slice(mostrados, mostrados + POR_PAGINA);
+  $("grid").insertAdjacentHTML("beforeend", lote.map((it, j) => tarjeta(it, mostrados + j)).join(""));
+  mostrados += lote.length;
+  $("more").hidden = mostrados >= resultados.length;
+  $("count").innerHTML = `<b>${resultados.length.toLocaleString("es-AR")}</b> resultados`;
+
+  let vacio = "";
+  if (!DATA.productos.length) {
+    vacio = `<div class="empty"><b>Todavía no hay productos cargados</b>
+      La primera actualización todavía no corrió. En GitHub, andá a la pestaña <i>Actions</i> → <i>Actualizar productos</i> → <i>Run workflow</i>.</div>`;
+  } else if (elegidos && !elegidos.size) {
+    vacio = `<div class="empty"><b>No hay proveedores elegidos</b>Tildá a la izquierda los proveedores en los que querés buscar.</div>`;
+  } else if (!resultados.length) {
+    vacio = `<div class="empty"><b>No encontramos nada con esos filtros</b>Probá con otra palabra, o sacá el filtro de precio o de stock.</div>`;
+  }
+  $("vacio").innerHTML = vacio;
+}
+
+function pintarTabla() {
+  const orden = { ok: 0, error: 1, pendiente: 2, inactivo: 3 };
+  const filas = [...DATA.proveedores].sort((a, b) => (orden[a.estado] ?? 9) - (orden[b.estado] ?? 9) || a.nombre.localeCompare(b.nombre));
+  $("tabla").innerHTML = filas.map(p => {
+    const detalle = p.estado === "error" ? `Error: ${esc(p.error)}` : p.estado === "inactivo" ? "Desactivado" : p.estado === "pendiente" ? "Todavía no se actualizó" : "";
+    return `<tr><td><span class="dot ${p.estado}"></span><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.nombre)}</a>
+      <small>${esc(p.plataforma)}${p.nota ? " · " + esc(p.nota) : ""}</small>${detalle ? `<small>${detalle}</small>` : ""}</td>
+      <td>${(p.cantidad || 0).toLocaleString("es-AR")}</td><td>${hace(p.actualizado)}</td></tr>`;
+  }).join("");
+}
+
+function guardarURL() {
+  const u = new URLSearchParams();
+  if ($("q").value) u.set("q", $("q").value);
+  if (elegidos) u.set("prov", [...elegidos].join(",") || "ninguno");
+  if ($("min").value) u.set("min", $("min").value);
+  if ($("max").value) u.set("max", $("max").value);
+  if ($("orden").value !== "rel") u.set("orden", $("orden").value);
+  history.replaceState(null, "", u.toString() ? "?" + u : location.pathname);
+}
+function leerURL() {
+  const u = new URLSearchParams(location.search);
+  $("q").value = u.get("q") || "";
+  const prov = u.get("prov");
+  elegidos = prov ? new Set(prov.split(",").filter(x => x && x !== "ninguno")) : null;
+  $("min").value = u.get("min") || "";
+  $("max").value = u.get("max") || "";
+  if (u.get("orden")) $("orden").value = u.get("orden");
+}
+
+let t;
+$("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(buscar, 150); });
+for (const id of ["min", "max"]) $(id).addEventListener("input", () => { clearTimeout(t); t = setTimeout(buscar, 300); });
+for (const id of ["stock", "conprecio", "orden"]) $(id).addEventListener("change", buscar);
+$("more").onclick = mas;
+$("grid").onclick = e => { const c = e.target.closest(".card"); if (c) abrir(resultados[+c.dataset.k]); };
+for (const d of [$("det"), $("dlg")]) d.addEventListener("click", e => { if (e.target === d) d.close(); });
+$("toggle").onclick = () => $("filtros").classList.toggle("open");
+
+cargar();
+</script>
+</body>
+</html>
